@@ -1,0 +1,352 @@
+// Prediction Platform - Database Schema
+// =====================================
+// This schema prioritizes:
+// - Ledger integrity (TokenTransaction is append-only source of truth)
+// - Atomic operations (all balance changes via transactions)
+// - Auditability (every token movement is logged)
+// - Correctness over convenience
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// =============================================================================
+// USER
+// =============================================================================
+// Core user account. Balance is cached/denormalized - the true balance
+// is always the sum of TokenTransaction amounts for this user.
+
+model User {
+  id            String   @id @default(cuid())
+  email         String   @unique
+  passwordHash  String
+  
+  // Cached balance - MUST always equal SUM(tokenTransactions.amount)
+  // This is denormalized for read performance but ledger is source of truth
+  tokenBalance  Int      @default(0)
+  pointsBalance Int      @default(0)
+  
+  isAdmin       Boolean  @default(false)
+  isVerified    Boolean  @default(false)
+  
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  
+  // Relations
+  predictions       Prediction[]
+  tokenTransactions TokenTransaction[]
+  pointsTransactions PointsTransaction[]
+  redemptions       Redemption[]
+  tokenAllowances   TokenAllowance[]
+  
+  @@index([email])
+  @@index([createdAt])
+}
+
+// =============================================================================
+// TOKEN TRANSACTION (LEDGER)
+// =============================================================================
+// This is the IMMUTABLE ledger. Every token change creates a new record.
+// NEVER update or delete records in this table.
+// The sum of all amounts for a user = their true balance.
+
+model TokenTransaction {
+  id            String          @id @default(cuid())
+  userId        String
+  user          User            @relation(fields: [userId], references: [id])
+  
+  // Positive = credit, Negative = debit
+  amount        Int
+  
+  // Running balance AFTER this transaction (for fast point-in-time queries)
+  balanceAfter  Int
+  
+  // What caused this transaction
+  type          TransactionType
+  
+  // Polymorphic reference to the source entity
+  // e.g., referenceType: "PREDICTION", referenceId: "clxx..."
+  referenceType String?
+  referenceId   String?
+  
+  // Human-readable description for audit
+  description   String?
+  
+  // Immutable timestamp - no updatedAt on purpose
+  createdAt     DateTime        @default(now())
+  
+  @@index([userId])
+  @@index([userId, createdAt])
+  @@index([type])
+  @@index([referenceType, referenceId])
+}
+
+enum TransactionType {
+  DAILY_ALLOWANCE   // Daily free tokens
+  SIGNUP_BONUS       // Initial free tokens
+  PREDICTION_STAKE   // Tokens wagered on prediction (negative)
+  PREDICTION_WIN     // Winnings from correct prediction (positive)
+  PREDICTION_REFUND  // Refund from cancelled event (positive)
+  REDEMPTION         // Tokens spent on reward (negative)
+  PURCHASE           // Tokens bought with real money (positive) - future
+  ADMIN_CREDIT       // Manual admin adjustment (positive)
+  ADMIN_DEBIT        // Manual admin adjustment (negative)
+}
+
+// =============================================================================
+// POINTS TRANSACTION (LEDGER)
+// =============================================================================
+// Immutable ledger for points (redeemable rewards currency).
+
+model PointsTransaction {
+  id            String               @id @default(cuid())
+  userId        String
+  user          User                 @relation(fields: [userId], references: [id])
+  
+  // Positive = credit, Negative = debit
+  amount        Int
+  
+  // Running balance AFTER this transaction (for fast point-in-time queries)
+  balanceAfter  Int
+  
+  type          PointsTransactionType
+  
+  referenceType String?
+  referenceId   String?
+  description   String?
+  
+  createdAt     DateTime             @default(now())
+  
+  @@index([userId])
+  @@index([userId, createdAt])
+  @@index([type])
+  @@index([referenceType, referenceId])
+}
+
+enum PointsTransactionType {
+  PREDICTION_WIN
+  CASHOUT
+  REDEMPTION
+  REDEMPTION_REFUND
+  ADMIN_CREDIT
+  ADMIN_DEBIT
+}
+
+// =============================================================================
+// TOKEN ALLOWANCE
+// =============================================================================
+// Tracks daily free token grants and remaining allowance.
+
+model TokenAllowance {
+  id              String   @id @default(cuid())
+  userId          String
+  user            User     @relation(fields: [userId], references: [id])
+  tokensRemaining Int      @default(5)
+  lastResetDate   DateTime
+  createdAt       DateTime @default(now())
+  
+  @@index([userId])
+  @@index([lastResetDate])
+  @@unique([userId])
+}
+
+// =============================================================================
+// EVENT
+// =============================================================================
+// A real-world event that users can predict on.
+// Status flow: OPEN -> LOCKED -> SETTLED (or CANCELLED at any point)
+
+model Event {
+  id              String      @id @default(cuid())
+  
+  title           String
+  description     String?
+  
+  // When the event starts (predictions lock at this time)
+  startsAt        DateTime
+  
+  // Current status in lifecycle
+  status          EventStatus @default(OPEN)
+  
+  // Possible outcomes users can predict (stored as JSON array of strings)
+  // e.g., ["Team A Wins", "Team B Wins", "Draw"]
+  outcomes        String[]
+  
+  // The actual outcome after event concludes (must be one of outcomes array)
+  // NULL until settled
+  finalOutcome    String?
+  
+  // Multiplier for winning predictions (e.g., 2.0 = double your stake)
+  // In production, this might vary per outcome
+  payoutMultiplier Float      @default(2.0)
+
+  // External mapping to The Odds API
+  externalEventId  String?
+  externalSportKey String?
+  currentOdds      Json?
+  oddsUpdatedAt    DateTime?
+  
+  // Admin who created/settled this event
+  createdBy       String?
+  settledBy       String?
+  settledAt       DateTime?
+  
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+  
+  // Relations
+  predictions     Prediction[]
+  
+  @@index([status])
+  @@index([startsAt])
+  @@index([status, startsAt])
+}
+
+enum EventStatus {
+  OPEN      // Accepting predictions
+  LOCKED    // Event started, no more predictions
+  SETTLED   // Outcome determined, payouts complete
+  CANCELLED // Event cancelled, all stakes refunded
+}
+
+// =============================================================================
+// PREDICTION
+// =============================================================================
+// A user's prediction on an event outcome.
+// Tokens are deducted IMMEDIATELY on creation.
+// Status is updated during settlement.
+
+model Prediction {
+  id            String           @id @default(cuid())
+  
+  userId        String
+  user          User             @relation(fields: [userId], references: [id])
+  
+  eventId       String
+  event         Event            @relation(fields: [eventId], references: [id])
+  
+  // The outcome the user predicted (must be one of event.outcomes)
+  predictedOutcome String
+  
+  // How many tokens were staked
+  stakeAmount   Int
+  
+  // Current status
+  status        PredictionStatus @default(PENDING)
+  
+  // Tokens won (only set if status = WON)
+  // This is stakeAmount * event.payoutMultiplier
+  payout        Int?
+
+  // Odds and cashout tracking
+  originalOdds  Decimal? @db.Decimal(10, 4)
+  cashedOutAt   DateTime?
+  cashoutAmount Int?
+  
+  // Timestamp when this was settled
+  settledAt     DateTime?
+  
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+  
+  // Prevent duplicate predictions on same event by same user
+  @@unique([userId, eventId])
+  
+  @@index([userId])
+  @@index([eventId])
+  @@index([status])
+  @@index([eventId, status])
+}
+
+enum PredictionStatus {
+  PENDING   // Awaiting event outcome
+  WON       // Prediction was correct
+  LOST      // Prediction was incorrect
+  REFUNDED  // Event was cancelled, stake returned
+  CASHED_OUT // User cashed out early
+}
+
+// =============================================================================
+// REWARD
+// =============================================================================
+// Items that can be redeemed with tokens.
+// Admin-managed catalog.
+
+model Reward {
+  id          String   @id @default(cuid())
+  
+  name        String
+  description String?
+  
+  // Cost in points to redeem
+  pointsCost  Int
+  
+  // Optional: limit how many can be redeemed
+  // NULL = unlimited
+  stockLimit  Int?
+  stockClaimed Int     @default(0)
+  
+  // Whether this reward is currently available
+  isActive    Boolean  @default(true)
+  
+  // Optional image URL
+  imageUrl    String?
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  // Relations
+  redemptions Redemption[]
+  
+  @@index([isActive])
+  @@index([pointsCost])
+}
+
+// =============================================================================
+// REDEMPTION
+// =============================================================================
+// A user's claim on a reward.
+// Tokens are deducted IMMEDIATELY on creation.
+// Admin fulfils manually and updates status.
+
+model Redemption {
+  id              String           @id @default(cuid())
+  
+  userId          String
+  user            User             @relation(fields: [userId], references: [id])
+  
+  rewardId        String
+  reward          Reward           @relation(fields: [rewardId], references: [id])
+  
+  // Points spent (captured at time of redemption in case reward price changes)
+  pointsCost      Int
+  
+  // Current status
+  status          RedemptionStatus @default(PENDING)
+  
+  // Admin notes for fulfilment (e.g., "Sent gift card code: XXXX")
+  fulfilmentNote  String?
+  
+  // Who fulfilled this and when
+  fulfilledBy     String?
+  fulfilledAt     DateTime?
+  
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  
+  @@index([userId])
+  @@index([rewardId])
+  @@index([status])
+  @@index([userId, status])
+}
+
+enum RedemptionStatus {
+  PENDING    // Awaiting fulfilment
+  FULFILLED  // Reward delivered to user
+  CANCELLED  // Cancelled, tokens refunded
+}
