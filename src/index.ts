@@ -28,8 +28,11 @@ async function start(): Promise<void> {
       `);
     });
 
+    let oddsSyncInterval: ReturnType<typeof setInterval> | undefined;
+    let settlementInterval: ReturnType<typeof setInterval> | undefined;
+
     if (!config.isTest) {
-      setInterval(async () => {
+      oddsSyncInterval = setInterval(async () => {
         try {
           await OddsSyncService.runOnce();
         } catch (error) {
@@ -37,7 +40,7 @@ async function start(): Promise<void> {
         }
       }, config.oddsApi.syncIntervalSeconds * 1000);
 
-      setInterval(async () => {
+      settlementInterval = setInterval(async () => {
         try {
           await SettlementWorker.runOnce();
         } catch (error) {
@@ -49,10 +52,13 @@ async function start(): Promise<void> {
     // Graceful shutdown handling
     const shutdown = async (signal: string) => {
       console.log(`\n${signal} received. Starting graceful shutdown...`);
-      
+
+      if (oddsSyncInterval) clearInterval(oddsSyncInterval);
+      if (settlementInterval) clearInterval(settlementInterval);
+
       server.close(async () => {
         console.log('HTTP server closed');
-        
+
         await disconnectDatabase();
         
         console.log('Shutdown complete');

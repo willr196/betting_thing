@@ -128,26 +128,26 @@ export const RewardsService = {
    * 5. Increment stock claimed (if limited)
    */
   async redeem(userId: string, rewardId: string) {
-    const reward = await prisma.reward.findUnique({
-      where: { id: rewardId },
-    });
-
-    if (!reward) {
-      throw AppError.notFound('Reward');
-    }
-
-    if (!reward.isActive) {
-      throw new AppError('REWARD_UNAVAILABLE', 'This reward is not available', 400);
-    }
-
-    // Check stock
-    if (reward.stockLimit !== null && reward.stockClaimed >= reward.stockLimit) {
-      throw new AppError('REWARD_OUT_OF_STOCK', 'This reward is out of stock', 400);
-    }
-
-    // Execute redemption atomically
+    // Execute redemption atomically with all checks inside the transaction
     const redemption = await prisma.$transaction(async (tx) => {
-      // Create redemption record first
+      // Lock the reward row to prevent stock oversell
+      const [reward] = await tx.$queryRaw<
+        Array<{ id: string; name: string; pointsCost: number; stockLimit: number | null; stockClaimed: number; isActive: boolean }>
+      >`SELECT "id", "name", "pointsCost", "stockLimit", "stockClaimed", "isActive" FROM "Reward" WHERE "id" = ${rewardId} FOR UPDATE`;
+
+      if (!reward) {
+        throw AppError.notFound('Reward');
+      }
+
+      if (!reward.isActive) {
+        throw new AppError('REWARD_UNAVAILABLE', 'This reward is not available', 400);
+      }
+
+      if (reward.stockLimit !== null && reward.stockClaimed >= reward.stockLimit) {
+        throw new AppError('REWARD_OUT_OF_STOCK', 'This reward is out of stock', 400);
+      }
+
+      // Create redemption record
       const newRedemption = await tx.redemption.create({
         data: {
           userId,

@@ -54,17 +54,24 @@ export function EventDetailPage() {
   const handleSubmit = async () => {
     if (!event || !selectedOutcome || !stakeAmount) return;
 
+    const stake = parseInt(stakeAmount);
+    if (isNaN(stake) || stake < 1 || stake > 35) {
+      setError('Stake must be a number between 1 and 35');
+      return;
+    }
+
     setError('');
     setSuccess('');
     setIsSubmitting(true);
 
     try {
-      await api.placePrediction(event.id, selectedOutcome, parseInt(stakeAmount));
+      await api.placePrediction(event.id, selectedOutcome, stake);
       setSuccess('Prediction placed successfully!');
       await refreshUser();
-      
+
       // Redirect after short delay
-      setTimeout(() => navigate('/predictions'), 1500);
+      const timer = setTimeout(() => navigate('/predictions'), 1500);
+      return () => clearTimeout(timer);
     } catch (err) {
       if (err instanceof ApiError) {
         setError(err.message);
@@ -102,8 +109,9 @@ export function EventDetailPage() {
     (outcome) =>
       outcome.name.trim().toLowerCase() === (selectedOutcome ?? '').trim().toLowerCase()
   )?.price;
-  const potentialWin = Math.floor(
-    parseInt(stakeAmount || '0') * (selectedOdds ?? event.payoutMultiplier)
+  const parsedStake = parseInt(stakeAmount || '0');
+  const potentialWin = isNaN(parsedStake) ? 0 : Math.floor(
+    parsedStake * (selectedOdds ?? event.payoutMultiplier)
   );
 
   return (

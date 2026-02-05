@@ -19,7 +19,7 @@ export const SettlementWorker = {
     try {
       const pendingEvents = await prisma.event.findMany({
         where: {
-          status: { in: ['OPEN', 'LOCKED'] },
+          status: 'LOCKED',
           externalSportKey: { not: null },
           externalEventId: { not: null },
         },
@@ -56,7 +56,7 @@ export const SettlementWorker = {
             continue;
           }
 
-          await EventService.settle(event.id, outcome, event.settledBy ?? 'system');
+          await EventService.settle(event.id, outcome, 'system');
           settledEvents++;
         }
       }
@@ -104,12 +104,22 @@ function determineOutcome(outcomes: string[], score: OddsScore): string | null {
   const normalizedOutcomes = outcomes.map((outcome) => outcome.trim().toLowerCase());
   if (winnerName === 'draw') {
     const drawIndex = normalizedOutcomes.findIndex((outcome) => outcome.includes('draw'));
-    return drawIndex >= 0 ? outcomes[drawIndex] : null;
+    return drawIndex >= 0 ? outcomes[drawIndex] ?? null : null;
   }
 
-  const winnerIndex = normalizedOutcomes.findIndex(
-    (outcome) => outcome === winnerName.toLowerCase() || outcome.includes(winnerName.toLowerCase())
+  const normalizedWinner = winnerName.toLowerCase();
+
+  // Prefer exact match first
+  let winnerIndex = normalizedOutcomes.findIndex(
+    (outcome) => outcome === normalizedWinner
   );
 
-  return winnerIndex >= 0 ? outcomes[winnerIndex] : null;
+  // Fallback: check if outcome contains the winner name (e.g. "Team A Wins" contains "team a")
+  if (winnerIndex < 0) {
+    winnerIndex = normalizedOutcomes.findIndex(
+      (outcome) => outcome.includes(normalizedWinner)
+    );
+  }
+
+  return winnerIndex >= 0 ? outcomes[winnerIndex] ?? null : null;
 }

@@ -1,5 +1,6 @@
 import { EventStatus, Prisma } from '@prisma/client';
 import { prisma } from './database.js';
+import { LedgerService } from './ledger.js';
 import { PointsLedgerService } from './pointsLedger.js';
 import { AppError } from '../utils/index.js';
 import type { SettlementResult } from '../types/index.js';
@@ -337,7 +338,7 @@ export const EventService = {
     return prisma.event.update({
       where: { id: eventId },
       data: {
-        currentOdds: odds,
+        currentOdds: odds as unknown as Prisma.InputJsonValue,
         oddsUpdatedAt: new Date(odds.updatedAt),
       },
     });

@@ -1,3 +1,4 @@
+import { Prisma } from '@prisma/client';
 import { prisma } from './database.js';
 import { OddsApiService } from './oddsApi.js';
 
@@ -63,7 +64,7 @@ export const OddsSyncService = {
               currentOdds: {
                 outcomes,
                 updatedAt: new Date().toISOString(),
-              },
+              } as unknown as Prisma.InputJsonValue,
               oddsUpdatedAt: new Date(),
             },
           });

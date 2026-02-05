@@ -8,6 +8,7 @@ import type { Event } from '../types';
 export function EventsPage() {
   const [events, setEvents] = useState<Event[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState('');
   const [filter, setFilter] = useState<'all' | 'OPEN' | 'LOCKED' | 'SETTLED'>('all');
 
   useEffect(() => {
@@ -16,6 +17,7 @@ export function EventsPage() {
 
   const loadEvents = async () => {
     setIsLoading(true);
+    setError('');
     try {
       const params: { status?: string; limit: number } = { limit: 50 };
       if (filter !== 'all') {
@@ -23,8 +25,9 @@ export function EventsPage() {
       }
       const data = await api.getEvents(params);
       setEvents(data.events);
-    } catch (error) {
-      console.error('Failed to load events:', error);
+    } catch (err) {
+      setError('Failed to load events. Please try again.');
+      console.error('Failed to load events:', err);
     } finally {
       setIsLoading(false);
     }
@@ -61,6 +64,11 @@ export function EventsPage() {
       {isLoading ? (
         <div className="flex justify-center py-12">
           <Spinner size="lg" />
+        </div>
+      ) : error ? (
+        <div className="text-center py-12">
+          <p className="text-red-600 mb-4">{error}</p>
+          <Button onClick={loadEvents}>Retry</Button>
         </div>
       ) : events.length === 0 ? (
         <EmptyState
@@ -149,13 +157,15 @@ function EventCard({ event }: { event: Event }) {
         </div>
       )}
 
-      <Link to={`/events/${event.id}`}>
-        <Button
-          variant={isOpen ? 'primary' : 'secondary'}
-          className="w-full"
-        >
-          {isOpen ? 'Make Prediction' : 'View Details'}
-        </Button>
+      <Link
+        to={`/events/${event.id}`}
+        className={`block w-full text-center px-4 py-2 rounded-lg font-medium transition-colors ${
+          isOpen
+            ? 'bg-primary-600 text-white hover:bg-primary-700'
+            : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+        }`}
+      >
+        {isOpen ? 'Make Prediction' : 'View Details'}
       </Link>
     </Card>
   );

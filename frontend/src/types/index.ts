@@ -119,7 +119,9 @@ export type TransactionType =
   | 'PREDICTION_STAKE'
   | 'PREDICTION_WIN'
   | 'PREDICTION_REFUND'
+  | 'CASHOUT'
   | 'REDEMPTION'
+  | 'REDEMPTION_REFUND'
   | 'PURCHASE'
   | 'ADMIN_CREDIT'
   | 'ADMIN_DEBIT';

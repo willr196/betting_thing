@@ -38,8 +38,8 @@ router.get(
   validateQuery(listRewardsSchema),
   async (req, res, next) => {
     try {
-      const { limit, offset } = req.query as z.infer<typeof listRewardsSchema>;
-      
+      const { limit, offset } = req.query as unknown as z.infer<typeof listRewardsSchema>;
+
       const result = await RewardsService.listRewards({
         activeOnly: true,
         limit,
@@ -53,67 +53,9 @@ router.get(
   }
 );
 
-/**
- * GET /rewards/:id
- * Get a specific reward.
- */
-router.get(
-  '/:id',
-  validateParams(idParamSchema),
-  async (req, res, next) => {
-    try {
-      const reward = await RewardsService.getRewardById(req.params.id);
-      sendSuccess(res, { reward });
-    } catch (error) {
-      next(error);
-    }
-  }
-);
-
 // =============================================================================
-// REDEMPTION ROUTES
+// REDEMPTION ROUTES (must be defined BEFORE /:id to avoid route shadowing)
 // =============================================================================
-
-/**
- * POST /rewards/redeem
- * Redeem a reward.
- */
-router.post(
-  '/redeem',
-  requireAuth,
-  validateBody(redeemSchema),
-  async (req, res, next) => {
-    try {
-      const { userId } = getAuthUser(req);
-      const { rewardId } = req.body;
-
-      const redemption = await RewardsService.redeem(userId, rewardId);
-
-      sendSuccess(res, { redemption }, 201);
-    } catch (error) {
-      next(error);
-    }
-  }
-);
-
-/**
- * POST /rewards/:id/redeem
- * Redeem a reward by ID.
- */
-router.post(
-  '/:id/redeem',
-  requireAuth,
-  validateParams(idParamSchema),
-  async (req, res, next) => {
-    try {
-      const { userId } = getAuthUser(req);
-      const redemption = await RewardsService.redeem(userId, req.params.id);
-      sendSuccess(res, { redemption }, 201);
-    } catch (error) {
-      next(error);
-    }
-  }
-);
 
 /**
  * GET /rewards/redemptions
@@ -126,7 +68,7 @@ router.get(
   async (req, res, next) => {
     try {
       const { userId } = getAuthUser(req);
-      const { status, limit, offset } = req.query as z.infer<typeof listRedemptionsSchema>;
+      const { status, limit, offset } = req.query as unknown as z.infer<typeof listRedemptionsSchema>;
 
       const result = await RewardsService.getUserRedemptions(userId, {
         status,
@@ -152,8 +94,70 @@ router.get(
   async (req, res, next) => {
     try {
       const { userId } = getAuthUser(req);
-      const redemption = await RewardsService.getRedemptionById(req.params.id, userId);
+      const redemption = await RewardsService.getRedemptionById(req.params.id as string, userId);
       sendSuccess(res, { redemption });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+/**
+ * POST /rewards/redeem
+ * Redeem a reward.
+ */
+router.post(
+  '/redeem',
+  requireAuth,
+  validateBody(redeemSchema),
+  async (req, res, next) => {
+    try {
+      const { userId } = getAuthUser(req);
+      const { rewardId } = req.body;
+
+      const redemption = await RewardsService.redeem(userId, rewardId);
+
+      sendSuccess(res, { redemption }, 201);
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+// =============================================================================
+// PARAMETERIZED ROUTES (after static routes)
+// =============================================================================
+
+/**
+ * GET /rewards/:id
+ * Get a specific reward.
+ */
+router.get(
+  '/:id',
+  validateParams(idParamSchema),
+  async (req, res, next) => {
+    try {
+      const reward = await RewardsService.getRewardById(req.params.id as string);
+      sendSuccess(res, { reward });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+/**
+ * POST /rewards/:id/redeem
+ * Redeem a reward by ID.
+ */
+router.post(
+  '/:id/redeem',
+  requireAuth,
+  validateParams(idParamSchema),
+  async (req, res, next) => {
+    try {
+      const { userId } = getAuthUser(req);
+      const redemption = await RewardsService.redeem(userId, req.params.id as string);
+      sendSuccess(res, { redemption }, 201);
     } catch (error) {
       next(error);
     }

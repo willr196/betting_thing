@@ -113,8 +113,8 @@ export const AuthService = {
     };
 
     return jwt.sign(payload, config.auth.jwtSecret, {
-      expiresIn: config.auth.jwtExpiresIn,
-    });
+      expiresIn: config.auth.jwtExpiresIn as string,
+    } as jwt.SignOptions);
   },
 
   /**

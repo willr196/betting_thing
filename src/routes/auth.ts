@@ -80,9 +80,13 @@ router.get(
       const user = await AuthService.getUserById(userId);
       
       if (!user) {
-        return sendSuccess(res, null, 404);
+        res.status(404).json({
+          success: false,
+          error: { code: 'NOT_FOUND', message: 'User not found' },
+        });
+        return;
       }
-      
+
       sendSuccess(res, { user });
     } catch (error) {
       next(error);
@@ -145,8 +149,8 @@ router.get(
   async (req, res, next) => {
     try {
       const { userId } = getAuthUser(req);
-      const limit = Math.min(parseInt(req.query.limit as string) || 50, 100);
-      const offset = parseInt(req.query.offset as string) || 0;
+      const limit = Math.min(Math.max(parseInt(req.query.limit as string) || 50, 1), 100);
+      const offset = Math.max(parseInt(req.query.offset as string) || 0, 0);
       
       const result = await LedgerService.getHistory(userId, { limit, offset });
       

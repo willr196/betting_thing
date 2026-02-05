@@ -74,7 +74,7 @@ export function RewardsPage() {
       <Card className="mb-6 bg-gradient-to-r from-emerald-500 to-teal-500 text-white">
         <div className="flex items-center justify-between">
           <div>
-            <p className="text-primary-100">Your Balance</p>
+            <p className="text-white/80">Your Balance</p>
             <p className="text-3xl font-bold">
               {formatPoints(user?.pointsBalance ?? 0)} points
             </p>

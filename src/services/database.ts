@@ -8,7 +8,6 @@ import { config } from '../config/index.js';
 // during development with hot reloading.
 
 declare global {
-  // eslint-disable-next-line no-var
   var __prisma: PrismaClient | undefined;
 }
 

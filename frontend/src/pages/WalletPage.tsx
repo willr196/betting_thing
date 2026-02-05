@@ -19,6 +19,7 @@ export function WalletPage() {
   const [allowance, setAllowance] = useState<TokenAllowance | null>(null);
   const [pointsBalance, setPointsBalance] = useState(0);
   const [tokenBalance, setTokenBalance] = useState(0);
+  const [error, setError] = useState('');
 
   useEffect(() => {
     loadTransactions();
@@ -26,6 +27,7 @@ export function WalletPage() {
 
   const loadTransactions = async () => {
     setIsLoading(true);
+    setError('');
     try {
       const [tokenStatus, points] = await Promise.all([
         api.getTokenAllowance(),
@@ -39,8 +41,9 @@ export function WalletPage() {
       const data = await api.getTransactions(100);
       setTransactions(data.transactions);
       setTotal(data.total);
-    } catch (error) {
-      console.error('Failed to load transactions:', error);
+    } catch (err) {
+      setError('Failed to load wallet data. Please try again.');
+      console.error('Failed to load transactions:', err);
     } finally {
       setIsLoading(false);
     }
@@ -127,6 +130,16 @@ export function WalletPage() {
           <div className="flex justify-center py-8">
             <Spinner />
           </div>
+        ) : error ? (
+          <div className="text-center py-8">
+            <p className="text-red-600 mb-4">{error}</p>
+            <button
+              onClick={loadTransactions}
+              className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700"
+            >
+              Retry
+            </button>
+          </div>
         ) : transactions.length === 0 ? (
           <EmptyState
             title="No transactions yet"
@@ -153,11 +166,14 @@ function TransactionRow({ transaction }: { transaction: TokenTransaction }) {
 
   const getIcon = (type: string): string => {
     const icons: Record<string, string> = {
+      DAILY_ALLOWANCE: '📅',
       SIGNUP_BONUS: '🎁',
       PREDICTION_STAKE: '🎯',
       PREDICTION_WIN: '🏆',
       PREDICTION_REFUND: '↩️',
+      CASHOUT: '💸',
       REDEMPTION: '🎁',
+      REDEMPTION_REFUND: '↩️',
       PURCHASE: '💳',
       ADMIN_CREDIT: '⭐',
       ADMIN_DEBIT: '⚠️',

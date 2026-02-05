@@ -38,7 +38,7 @@ export const PredictionService = {
       throw AppError.badRequest(`Maximum stake is ${config.tokens.maxStake} tokens`);
     }
 
-    // Get event
+    // Pre-fetch event for basic validation and odds (outside transaction for performance)
     const event = await prisma.event.findUnique({
       where: { id: eventId },
     });
@@ -47,25 +47,11 @@ export const PredictionService = {
       throw AppError.notFound('Event');
     }
 
-    // Check event is open for predictions
-    if (event.status !== 'OPEN') {
-      throw new AppError(
-        'EVENT_NOT_OPEN',
-        `Event is ${event.status}. Predictions are only accepted for OPEN events.`,
-        400
-      );
+    if (!event.externalEventId || !event.externalSportKey) {
+      throw AppError.badRequest('Event is missing external odds mapping');
     }
 
-    // Check event hasn't started yet
-    if (event.startsAt.getTime() <= Date.now()) {
-      throw new AppError(
-        'EVENT_ALREADY_STARTED',
-        'Event has already started. No more predictions allowed.',
-        400
-      );
-    }
-
-    // Validate outcome
+    // Validate outcome against event's possible outcomes
     if (!event.outcomes.includes(predictedOutcome)) {
       throw new AppError(
         'INVALID_OUTCOME',
@@ -74,25 +60,7 @@ export const PredictionService = {
       );
     }
 
-    // Check for existing prediction
-    const existingPrediction = await prisma.prediction.findUnique({
-      where: {
-        userId_eventId: { userId, eventId },
-      },
-    });
-
-    if (existingPrediction) {
-      throw new AppError(
-        'ALREADY_PREDICTED',
-        'You have already placed a prediction on this event',
-        409
-      );
-    }
-
-    if (!event.externalEventId || !event.externalSportKey) {
-      throw AppError.badRequest('Event is missing external odds mapping');
-    }
-
+    // Fetch live odds before the transaction (external API call)
     const odds = await OddsApiService.getEventOdds(
       event.externalSportKey,
       event.externalEventId
@@ -115,9 +83,49 @@ export const PredictionService = {
       );
     }
 
-    // Execute prediction placement atomically
+    // Execute prediction placement atomically — re-check event status and duplicates inside transaction
     const prediction = await prisma.$transaction(async (tx) => {
-      // Create prediction first (to get ID for ledger reference)
+      // Re-fetch event with FOR UPDATE lock to prevent race conditions
+      const [lockedEvent] = await tx.$queryRaw<
+        Array<{ id: string; status: string; startsAt: Date }>
+      >`SELECT "id", "status", "startsAt" FROM "Event" WHERE "id" = ${eventId} FOR UPDATE`;
+
+      if (!lockedEvent) {
+        throw AppError.notFound('Event');
+      }
+
+      if (lockedEvent.status !== 'OPEN') {
+        throw new AppError(
+          'EVENT_NOT_OPEN',
+          `Event is ${lockedEvent.status}. Predictions are only accepted for OPEN events.`,
+          400
+        );
+      }
+
+      if (new Date(lockedEvent.startsAt).getTime() <= Date.now()) {
+        throw new AppError(
+          'EVENT_ALREADY_STARTED',
+          'Event has already started. No more predictions allowed.',
+          400
+        );
+      }
+
+      // Check for existing prediction inside the transaction
+      const existingPrediction = await tx.prediction.findUnique({
+        where: {
+          userId_eventId: { userId, eventId },
+        },
+      });
+
+      if (existingPrediction) {
+        throw new AppError(
+          'ALREADY_PREDICTED',
+          'You have already placed a prediction on this event',
+          409
+        );
+      }
+
+      // Create prediction
       const newPrediction = await tx.prediction.create({
         data: {
           userId,
@@ -285,7 +293,7 @@ export const PredictionService = {
       lost,
       pending,
       cashedOut,
-      winRate: total > 0 ? (won / (won + lost)) * 100 : 0,
+      winRate: (won + lost) > 0 ? (won / (won + lost)) * 100 : 0,
       totalWinnings: winnings._sum.payout ?? 0,
       totalStaked: stakes._sum.stakeAmount ?? 0,
     };
@@ -370,9 +378,10 @@ export const PredictionService = {
     }
 
     return prisma.$transaction(async (tx) => {
-      const prediction = await tx.prediction.findUnique({
-        where: { id: predictionId },
-      });
+      // Lock the prediction row to prevent double cashout
+      const [prediction] = await tx.$queryRaw<
+        Array<{ id: string; userId: string; status: string; cashedOutAt: Date | null; stakeAmount: number }>
+      >`SELECT "id", "userId", "status", "cashedOutAt", "stakeAmount" FROM "Prediction" WHERE "id" = ${predictionId} FOR UPDATE`;
 
       if (!prediction || prediction.userId !== userId) {
         throw AppError.notFound('Prediction');
@@ -413,11 +422,9 @@ function calculateCashoutValue(
   currentOdds: number,
   eventStarted: boolean
 ): number {
-  const potentialWin = originalStakeTokens * originalOdds;
-  const impliedProbOriginal = 1 / originalOdds;
-  const impliedProbCurrent = 1 / currentOdds;
+  // Standard cashout formula: stake * (originalOdds / currentOdds) * margin
   const margin = eventStarted ? 0.9 : 0.95;
-  const cashoutValue = Math.floor(potentialWin * (impliedProbCurrent / impliedProbOriginal) * margin);
+  const cashoutValue = Math.floor(originalStakeTokens * (originalOdds / currentOdds) * margin);
 
   return Math.max(0, cashoutValue);
 }

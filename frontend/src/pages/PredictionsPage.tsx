@@ -9,6 +9,7 @@ export function PredictionsPage() {
   const [predictions, setPredictions] = useState<Prediction[]>([]);
   const [stats, setStats] = useState<PredictionStats | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState('');
   const [filter, setFilter] = useState<'all' | 'PENDING' | 'WON' | 'LOST' | 'CASHED_OUT'>('all');
 
   useEffect(() => {
@@ -17,21 +18,23 @@ export function PredictionsPage() {
 
   const loadData = async () => {
     setIsLoading(true);
+    setError('');
     try {
       const params: { status?: string; limit: number } = { limit: 50 };
       if (filter !== 'all') {
         params.status = filter;
       }
-      
+
       const [predictionsData, statsData] = await Promise.all([
         api.getMyPredictions(params),
         api.getMyPredictionStats(),
       ]);
-      
+
       setPredictions(predictionsData.predictions);
       setStats(statsData.stats);
-    } catch (error) {
-      console.error('Failed to load predictions:', error);
+    } catch (err) {
+      setError('Failed to load predictions. Please try again.');
+      console.error('Failed to load predictions:', err);
     } finally {
       setIsLoading(false);
     }
@@ -99,6 +102,11 @@ export function PredictionsPage() {
         <div className="flex justify-center py-12">
           <Spinner size="lg" />
         </div>
+      ) : error ? (
+        <div className="text-center py-12">
+          <p className="text-red-600 mb-4">{error}</p>
+          <Button onClick={loadData}>Retry</Button>
+        </div>
       ) : predictions.length === 0 ? (
         <EmptyState
           title="No predictions yet"
@@ -112,7 +120,7 @@ export function PredictionsPage() {
       ) : (
         <div className="space-y-4">
           {predictions.map((prediction) => (
-            <PredictionCard key={prediction.id} prediction={prediction} />
+            <PredictionCard key={prediction.id} prediction={prediction} onCashout={loadData} />
           ))}
         </div>
       )}
@@ -124,7 +132,7 @@ export function PredictionsPage() {
 // PREDICTION CARD
 // =============================================================================
 
-function PredictionCard({ prediction }: { prediction: Prediction }) {
+function PredictionCard({ prediction, onCashout }: { prediction: Prediction; onCashout: () => void }) {
   const isWon = prediction.status === 'WON';
   const isLost = prediction.status === 'LOST';
   const isPending = prediction.status === 'PENDING';
@@ -151,7 +159,7 @@ function PredictionCard({ prediction }: { prediction: Prediction }) {
     setCashoutError(null);
     try {
       await api.cashoutPrediction(prediction.id);
-      window.location.reload();
+      onCashout();
     } catch (error) {
       setCashoutError('Cashout failed');
     } finally {

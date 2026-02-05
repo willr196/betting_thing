@@ -51,12 +51,36 @@ class ApiClient {
       (headers as Record<string, string>)['Authorization'] = `Bearer ${token}`;
     }
 
-    const response = await fetch(`${API_BASE}${endpoint}`, {
-      ...options,
-      headers,
-    });
+    let response: Response;
+    try {
+      response = await fetch(`${API_BASE}${endpoint}`, {
+        ...options,
+        headers,
+      });
+    } catch {
+      throw new ApiError(
+        'Network error. Please check your connection and try again.',
+        'NETWORK_ERROR',
+        0
+      );
+    }
 
-    const data: ApiResponse<T> = await response.json();
+    // Handle 401 globally — clear token and signal auth failure
+    if (response.status === 401) {
+      this.setToken(null);
+      throw new ApiError('Session expired. Please log in again.', 'UNAUTHORIZED', 401);
+    }
+
+    let data: ApiResponse<T>;
+    try {
+      data = await response.json();
+    } catch {
+      throw new ApiError(
+        'Unexpected server response. Please try again later.',
+        'PARSE_ERROR',
+        response.status
+      );
+    }
 
     if (!data.success) {
       throw new ApiError(
@@ -139,9 +163,9 @@ class ApiClient {
     const searchParams = new URLSearchParams();
     if (params?.status) searchParams.set('status', params.status);
     if (params?.upcoming) searchParams.set('upcoming', 'true');
-    if (params?.limit) searchParams.set('limit', params.limit.toString());
-    if (params?.offset) searchParams.set('offset', params.offset.toString());
-    
+    if (params?.limit != null) searchParams.set('limit', params.limit.toString());
+    if (params?.offset != null) searchParams.set('offset', params.offset.toString());
+
     const query = searchParams.toString();
     return this.request<{ events: Event[]; total: number }>(
       `/events${query ? `?${query}` : ''}`
@@ -182,9 +206,9 @@ class ApiClient {
   }): Promise<{ predictions: Prediction[]; total: number }> {
     const searchParams = new URLSearchParams();
     if (params?.status) searchParams.set('status', params.status);
-    if (params?.limit) searchParams.set('limit', params.limit.toString());
-    if (params?.offset) searchParams.set('offset', params.offset.toString());
-    
+    if (params?.limit != null) searchParams.set('limit', params.limit.toString());
+    if (params?.offset != null) searchParams.set('offset', params.offset.toString());
+
     const query = searchParams.toString();
     return this.request<{ predictions: Prediction[]; total: number }>(
       `/predictions${query ? `?${query}` : ''}`

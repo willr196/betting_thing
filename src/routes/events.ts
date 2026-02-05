@@ -33,7 +33,7 @@ router.get(
   validateQuery(listEventsSchema),
   async (req, res, next) => {
     try {
-      const { status, upcoming, limit, offset } = req.query as z.infer<typeof listEventsSchema>;
+      const { status, upcoming, limit, offset } = req.query as unknown as z.infer<typeof listEventsSchema>;
       
       const result = await EventService.list({
         status,
@@ -82,7 +82,7 @@ router.get(
   validateParams(idParamSchema),
   async (req, res, next) => {
     try {
-      const event = await EventService.getById(req.params.id);
+      const event = await EventService.getById(req.params.id as string);
       sendSuccess(res, { event });
     } catch (error) {
       next(error);
@@ -100,7 +100,7 @@ router.get(
   validateParams(idParamSchema),
   async (req, res, next) => {
     try {
-      const stats = await PredictionService.getEventStats(req.params.id);
+      const stats = await PredictionService.getEventStats(req.params.id as string);
       sendSuccess(res, { stats });
     } catch (error) {
       next(error);
@@ -118,7 +118,7 @@ router.get(
   validateParams(idParamSchema),
   async (req, res, next) => {
     try {
-      const event = await EventService.getById(req.params.id);
+      const event = await EventService.getById(req.params.id as string);
       if (!event.externalEventId || !event.externalSportKey) {
         return sendSuccess(res, { odds: null });
       }

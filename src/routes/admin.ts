@@ -6,7 +6,7 @@ import { LedgerService } from '../services/ledger.js';
 import { prisma } from '../services/database.js';
 import { SettlementWorker } from '../services/settlementWorker.js';
 import { OddsSyncService } from '../services/oddsSync.js';
-import { requireAuth, requireAdmin, validateBody, validateQuery, validateParams, getAuthUser, idParamSchema, positiveIntSchema, futureDateSchema } from '../middleware/index.js';
+import { requireAuth, requireAdmin, validateBody, validateParams, getAuthUser, idParamSchema, positiveIntSchema, futureDateSchema } from '../middleware/index.js';
 import { sendSuccess } from '../utils/index.js';
 
 const router = Router();
@@ -110,7 +110,7 @@ router.post(
   validateParams(idParamSchema),
   async (req, res, next) => {
     try {
-      const event = await EventService.lock(req.params.id);
+      const event = await EventService.lock(req.params.id as string);
       sendSuccess(res, { event });
     } catch (error) {
       next(error);
@@ -132,7 +132,7 @@ router.post(
       const { finalOutcome } = req.body;
 
       const result = await EventService.settle(
-        req.params.id,
+        req.params.id as string,
         finalOutcome,
         userId
       );
@@ -154,7 +154,7 @@ router.post(
   async (req, res, next) => {
     try {
       const { userId } = getAuthUser(req);
-      const result = await EventService.cancel(req.params.id, userId);
+      const result = await EventService.cancel(req.params.id as string, userId);
       sendSuccess(res, { cancellation: result });
     } catch (error) {
       next(error);
@@ -225,7 +225,7 @@ router.patch(
   validateBody(updateRewardSchema),
   async (req, res, next) => {
     try {
-      const reward = await RewardsService.updateReward(req.params.id, req.body);
+      const reward = await RewardsService.updateReward(req.params.id as string, req.body);
       sendSuccess(res, { reward });
     } catch (error) {
       next(error);
@@ -300,7 +300,7 @@ router.post(
       const { fulfilmentNote } = req.body;
 
       const redemption = await RewardsService.fulfil(
-        req.params.id,
+        req.params.id as string,
         userId,
         fulfilmentNote
       );
@@ -322,7 +322,7 @@ router.post(
   async (req, res, next) => {
     try {
       const { userId } = getAuthUser(req);
-      const redemption = await RewardsService.cancel(req.params.id, userId);
+      const redemption = await RewardsService.cancel(req.params.id as string, userId);
       sendSuccess(res, { redemption });
     } catch (error) {
       next(error);
@@ -381,7 +381,7 @@ router.get(
   validateParams(idParamSchema),
   async (req, res, next) => {
     try {
-      const check = await LedgerService.verifyBalance(req.params.id);
+      const check = await LedgerService.verifyBalance(req.params.id as string);
       sendSuccess(res, { balance: check });
     } catch (error) {
       next(error);
@@ -398,7 +398,7 @@ router.post(
   validateParams(idParamSchema),
   async (req, res, next) => {
     try {
-      const check = await LedgerService.repairBalance(req.params.id);
+      const check = await LedgerService.repairBalance(req.params.id as string);
       sendSuccess(res, { balance: check });
     } catch (error) {
       next(error);

@@ -85,12 +85,13 @@ export function LoginPage() {
           </p>
         </Card>
 
-        {/* Test accounts hint */}
-        <div className="mt-6 p-4 bg-gray-100 rounded-lg text-sm text-gray-600">
-          <p className="font-medium mb-2">Test accounts:</p>
-          <p>Admin: admin@example.com / Admin123!</p>
-          <p>User: test@example.com / Test123!</p>
-        </div>
+        {import.meta.env.DEV && (
+          <div className="mt-6 p-4 bg-gray-100 rounded-lg text-sm text-gray-600">
+            <p className="font-medium mb-2">Test accounts (dev only):</p>
+            <p>Admin: admin@example.com / Admin123!</p>
+            <p>User: test@example.com / Test123!</p>
+          </div>
+        )}
       </div>
     </div>
   );

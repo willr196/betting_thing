@@ -64,7 +64,7 @@ router.get(
   async (req, res, next) => {
     try {
       const { userId } = getAuthUser(req);
-      const { status, limit, offset } = req.query as z.infer<typeof listPredictionsSchema>;
+      const { status, limit, offset } = req.query as unknown as z.infer<typeof listPredictionsSchema>;
 
       const result = await PredictionService.getByUser(userId, {
         status,
@@ -108,7 +108,7 @@ router.get(
   async (req, res, next) => {
     try {
       const { userId } = getAuthUser(req);
-      const result = await PredictionService.getCashoutValue(req.params.id, userId);
+      const result = await PredictionService.getCashoutValue(req.params.id as string, userId);
       sendSuccess(res, result);
     } catch (error) {
       next(error);
@@ -127,7 +127,7 @@ router.post(
   async (req, res, next) => {
     try {
       const { userId } = getAuthUser(req);
-      const prediction = await PredictionService.cashout(req.params.id, userId);
+      const prediction = await PredictionService.cashout(req.params.id as string, userId);
       sendSuccess(res, { prediction });
     } catch (error) {
       next(error);
@@ -146,7 +146,7 @@ router.get(
   async (req, res, next) => {
     try {
       const { userId } = getAuthUser(req);
-      const prediction = await PredictionService.getById(req.params.id, userId);
+      const prediction = await PredictionService.getById(req.params.id as string, userId);
       sendSuccess(res, { prediction });
     } catch (error) {
       next(error);
