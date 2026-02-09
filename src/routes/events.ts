@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { EventService } from '../services/events.js';
 import { PredictionService } from '../services/predictions.js';
 import { optionalAuth, validateQuery, validateParams, idParamSchema } from '../middleware/index.js';
-import { sendSuccess } from '../utils/index.js';
+import { asyncHandler, parseLimitOffset, sendSuccess } from '../utils/index.js';
 import { OddsApiService } from '../services/oddsApi.js';
 
 const router = Router();
@@ -31,22 +31,18 @@ router.get(
   '/',
   optionalAuth,
   validateQuery(listEventsSchema),
-  async (req, res, next) => {
-    try {
-      const { status, upcoming, limit, offset } = req.query as unknown as z.infer<typeof listEventsSchema>;
-      
-      const result = await EventService.list({
-        status,
-        upcoming,
-        limit,
-        offset,
-      });
+  asyncHandler(async (req, res) => {
+    const { status, upcoming, limit, offset } = req.query as unknown as z.infer<typeof listEventsSchema>;
 
-      sendSuccess(res, result);
-    } catch (error) {
-      next(error);
-    }
-  }
+    const result = await EventService.list({
+      status,
+      upcoming,
+      limit,
+      offset,
+    });
+
+    sendSuccess(res, result);
+  })
 );
 
 /**
@@ -56,20 +52,19 @@ router.get(
 router.get(
   '/upcoming',
   optionalAuth,
-  async (req, res, next) => {
-    try {
-      const limit = Math.min(parseInt(req.query.limit as string) || 20, 100);
-      
-      const result = await EventService.list({
-        upcoming: true,
-        limit,
-      });
+  asyncHandler(async (req, res) => {
+    const { limit } = parseLimitOffset(req.query as Record<string, unknown>, {
+      defaultLimit: 20,
+      maxLimit: 100,
+    });
 
-      sendSuccess(res, result);
-    } catch (error) {
-      next(error);
-    }
-  }
+    const result = await EventService.list({
+      upcoming: true,
+      limit,
+    });
+
+    sendSuccess(res, result);
+  })
 );
 
 /**
@@ -80,14 +75,10 @@ router.get(
   '/:id',
   optionalAuth,
   validateParams(idParamSchema),
-  async (req, res, next) => {
-    try {
-      const event = await EventService.getById(req.params.id as string);
-      sendSuccess(res, { event });
-    } catch (error) {
-      next(error);
-    }
-  }
+  asyncHandler(async (req, res) => {
+    const event = await EventService.getById(req.params.id as string);
+    sendSuccess(res, { event });
+  })
 );
 
 /**
@@ -98,14 +89,10 @@ router.get(
   '/:id/stats',
   optionalAuth,
   validateParams(idParamSchema),
-  async (req, res, next) => {
-    try {
-      const stats = await PredictionService.getEventStats(req.params.id as string);
-      sendSuccess(res, { stats });
-    } catch (error) {
-      next(error);
-    }
-  }
+  asyncHandler(async (req, res) => {
+    const stats = await PredictionService.getEventStats(req.params.id as string);
+    sendSuccess(res, { stats });
+  })
 );
 
 /**
@@ -116,27 +103,23 @@ router.get(
   '/:id/odds',
   optionalAuth,
   validateParams(idParamSchema),
-  async (req, res, next) => {
-    try {
-      const event = await EventService.getById(req.params.id as string);
-      if (!event.externalEventId || !event.externalSportKey) {
-        return sendSuccess(res, { odds: null });
-      }
-
-      const odds = await OddsApiService.getEventOdds(
-        event.externalSportKey,
-        event.externalEventId
-      );
-
-      if (odds) {
-        await EventService.updateOdds(event.id, odds);
-      }
-
-      sendSuccess(res, { odds });
-    } catch (error) {
-      next(error);
+  asyncHandler(async (req, res) => {
+    const event = await EventService.getById(req.params.id as string);
+    if (!event.externalEventId || !event.externalSportKey) {
+      return sendSuccess(res, { odds: null });
     }
-  }
+
+    const odds = await OddsApiService.getEventOdds(
+      event.externalSportKey,
+      event.externalEventId
+    );
+
+    if (odds) {
+      await EventService.updateOdds(event.id, odds);
+    }
+
+    sendSuccess(res, { odds });
+  })
 );
 
 export default router;

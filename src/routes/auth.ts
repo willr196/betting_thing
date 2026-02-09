@@ -4,7 +4,7 @@ import { AuthService } from '../services/auth.js';
 import { LedgerService } from '../services/ledger.js';
 import { TokenAllowanceService } from '../services/tokenAllowance.js';
 import { requireAuth, validateBody, getAuthUser, emailSchema, passwordSchema } from '../middleware/index.js';
-import { sendSuccess } from '../utils/index.js';
+import { asyncHandler, parseLimitOffset, sendSuccess } from '../utils/index.js';
 
 const router = Router();
 
@@ -38,15 +38,11 @@ const changePasswordSchema = z.object({
 router.post(
   '/register',
   validateBody(registerSchema),
-  async (req, res, next) => {
-    try {
-      const { email, password } = req.body;
-      const result = await AuthService.register(email, password);
-      sendSuccess(res, result, 201);
-    } catch (error) {
-      next(error);
-    }
-  }
+  asyncHandler(async (req, res) => {
+    const { email, password } = req.body;
+    const result = await AuthService.register(email, password);
+    sendSuccess(res, result, 201);
+  })
 );
 
 /**
@@ -56,15 +52,11 @@ router.post(
 router.post(
   '/login',
   validateBody(loginSchema),
-  async (req, res, next) => {
-    try {
-      const { email, password } = req.body;
-      const result = await AuthService.login(email, password);
-      sendSuccess(res, result);
-    } catch (error) {
-      next(error);
-    }
-  }
+  asyncHandler(async (req, res) => {
+    const { email, password } = req.body;
+    const result = await AuthService.login(email, password);
+    sendSuccess(res, result);
+  })
 );
 
 /**
@@ -74,24 +66,20 @@ router.post(
 router.get(
   '/me',
   requireAuth,
-  async (req, res, next) => {
-    try {
-      const { userId } = getAuthUser(req);
-      const user = await AuthService.getUserById(userId);
-      
-      if (!user) {
-        res.status(404).json({
-          success: false,
-          error: { code: 'NOT_FOUND', message: 'User not found' },
-        });
-        return;
-      }
+  asyncHandler(async (req, res) => {
+    const { userId } = getAuthUser(req);
+    const user = await AuthService.getUserById(userId);
 
-      sendSuccess(res, { user });
-    } catch (error) {
-      next(error);
+    if (!user) {
+      res.status(404).json({
+        success: false,
+        error: { code: 'NOT_FOUND', message: 'User not found' },
+      });
+      return;
     }
-  }
+
+    sendSuccess(res, { user });
+  })
 );
 
 /**
@@ -101,20 +89,16 @@ router.get(
 router.get(
   '/balance',
   requireAuth,
-  async (req, res, next) => {
-    try {
-      const { userId } = getAuthUser(req);
-      await TokenAllowanceService.getStatus(userId);
-      const balance = await LedgerService.getBalance(userId);
-      
-      sendSuccess(res, {
-        balance: balance.cached,
-        verified: balance.cached === balance.calculated,
-      });
-    } catch (error) {
-      next(error);
-    }
-  }
+  asyncHandler(async (req, res) => {
+    const { userId } = getAuthUser(req);
+    await TokenAllowanceService.getStatus(userId);
+    const balance = await LedgerService.getBalance(userId);
+
+    sendSuccess(res, {
+      balance: balance.cached,
+      verified: balance.cached === balance.calculated,
+    });
+  })
 );
 
 /**
@@ -125,18 +109,14 @@ router.post(
   '/change-password',
   requireAuth,
   validateBody(changePasswordSchema),
-  async (req, res, next) => {
-    try {
-      const { userId } = getAuthUser(req);
-      const { currentPassword, newPassword } = req.body;
-      
-      await AuthService.updatePassword(userId, currentPassword, newPassword);
-      
-      sendSuccess(res, { message: 'Password updated successfully' });
-    } catch (error) {
-      next(error);
-    }
-  }
+  asyncHandler(async (req, res) => {
+    const { userId } = getAuthUser(req);
+    const { currentPassword, newPassword } = req.body;
+
+    await AuthService.updatePassword(userId, currentPassword, newPassword);
+
+    sendSuccess(res, { message: 'Password updated successfully' });
+  })
 );
 
 /**
@@ -146,19 +126,17 @@ router.post(
 router.get(
   '/transactions',
   requireAuth,
-  async (req, res, next) => {
-    try {
-      const { userId } = getAuthUser(req);
-      const limit = Math.min(Math.max(parseInt(req.query.limit as string) || 50, 1), 100);
-      const offset = Math.max(parseInt(req.query.offset as string) || 0, 0);
-      
-      const result = await LedgerService.getHistory(userId, { limit, offset });
-      
-      sendSuccess(res, result);
-    } catch (error) {
-      next(error);
-    }
-  }
+  asyncHandler(async (req, res) => {
+    const { userId } = getAuthUser(req);
+    const { limit, offset } = parseLimitOffset(req.query as Record<string, unknown>, {
+      defaultLimit: 50,
+      maxLimit: 100,
+    });
+
+    const result = await LedgerService.getHistory(userId, { limit, offset });
+
+    sendSuccess(res, result);
+  })
 );
 
 export default router;

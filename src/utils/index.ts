@@ -1,4 +1,4 @@
-import type { Response } from 'express';
+import type { RequestHandler, Response } from 'express';
 import type { ApiResponse, ErrorCode } from '../types/index.js';
 import { ErrorCodes } from '../types/index.js';
 
@@ -165,16 +165,18 @@ export function roundToDecimal(value: number, decimals: number = 2): number {
  * Wraps an async function to catch errors and pass them to Express error handler.
  * Use this to wrap async route handlers.
  */
-export function asyncHandler<T>(
-  fn: (...args: T[]) => Promise<unknown>
-): (...args: T[]) => void {
-  return (...args: T[]) => {
-    Promise.resolve(fn(...args)).catch((error) => {
-      // The last argument should be next() in Express middleware
-      const next = args[args.length - 1];
-      if (typeof next === 'function') {
-        next(error);
-      }
+export function asyncHandler<
+  P = Record<string, string>,
+  ResBody = unknown,
+  ReqBody = unknown,
+  ReqQuery = unknown,
+  Locals extends Record<string, unknown> = Record<string, unknown>
+>(
+  fn: RequestHandler<P, ResBody, ReqBody, ReqQuery, Locals>
+): RequestHandler<P, ResBody, ReqBody, ReqQuery, Locals> {
+  return (req, res, next) => {
+    Promise.resolve(fn(req, res, next)).catch((error) => {
+      next(error);
     });
   };
 }
@@ -212,4 +214,26 @@ export function pick<T extends object, K extends keyof T>(
     }
   }
   return result;
+}
+
+// =============================================================================
+// QUERY HELPERS
+// =============================================================================
+
+export function parseLimitOffset(
+  query: Record<string, unknown>,
+  options: { defaultLimit?: number; maxLimit?: number } = {}
+): { limit: number; offset: number } {
+  const { defaultLimit = 50, maxLimit = 100 } = options;
+
+  const limitRaw = query.limit;
+  const offsetRaw = query.offset;
+
+  const limit = Math.min(
+    Math.max(parseInt(String(limitRaw ?? ''), 10) || defaultLimit, 1),
+    maxLimit
+  );
+  const offset = Math.max(parseInt(String(offsetRaw ?? ''), 10) || 0, 0);
+
+  return { limit, offset };
 }

@@ -122,8 +122,8 @@ export const RewardsService = {
    * Redeem a reward.
    * Atomically:
    * 1. Check reward is available
-   * 2. Check user has enough tokens
-   * 3. Debit tokens
+   * 2. Check user has enough points
+   * 3. Debit points
    * 4. Create redemption record
    * 5. Increment stock claimed (if limited)
    */
@@ -131,9 +131,7 @@ export const RewardsService = {
     // Execute redemption atomically with all checks inside the transaction
     const redemption = await prisma.$transaction(async (tx) => {
       // Lock the reward row to prevent stock oversell
-      const [reward] = await tx.$queryRaw<
-        Array<{ id: string; name: string; pointsCost: number; stockLimit: number | null; stockClaimed: number; isActive: boolean }>
-      >`SELECT "id", "name", "pointsCost", "stockLimit", "stockClaimed", "isActive" FROM "Reward" WHERE "id" = ${rewardId} FOR UPDATE`;
+      const reward = await lockRewardForRedemption(tx, rewardId);
 
       if (!reward) {
         throw AppError.notFound('Reward');
@@ -313,7 +311,7 @@ export const RewardsService = {
   },
 
   /**
-   * Cancel a redemption and refund tokens (admin).
+   * Cancel a redemption and refund points (admin).
    */
   async cancel(redemptionId: string, cancelledBy: string) {
     const redemption = await prisma.redemption.findUnique({
@@ -333,7 +331,7 @@ export const RewardsService = {
       );
     }
 
-    // Cancel and refund atomically
+    // Cancel and refund points atomically
     await prisma.$transaction(async (tx) => {
       await PointsLedgerService.credit(
         {
@@ -370,3 +368,27 @@ export const RewardsService = {
     return this.getRedemptionById(redemptionId);
   },
 };
+
+async function lockRewardForRedemption(
+  tx: Prisma.TransactionClient,
+  rewardId: string
+): Promise<{
+  id: string;
+  name: string;
+  pointsCost: number;
+  stockLimit: number | null;
+  stockClaimed: number;
+  isActive: boolean;
+} | null> {
+  const [reward] = await tx.$queryRaw<
+    Array<{
+      id: string;
+      name: string;
+      pointsCost: number;
+      stockLimit: number | null;
+      stockClaimed: number;
+      isActive: boolean;
+    }>
+  >`SELECT "id", "name", "pointsCost", "stockLimit", "stockClaimed", "isActive" FROM "Reward" WHERE "id" = ${rewardId} FOR UPDATE`;
+  return reward ?? null;
+}

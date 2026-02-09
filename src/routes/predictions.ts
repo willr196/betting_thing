@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { PredictionService } from '../services/predictions.js';
 import { requireAuth, validateBody, validateQuery, validateParams, getAuthUser, idParamSchema, positiveIntSchema } from '../middleware/index.js';
-import { sendSuccess } from '../utils/index.js';
+import { asyncHandler, sendSuccess } from '../utils/index.js';
 
 const router = Router();
 
@@ -34,23 +34,19 @@ router.post(
   '/',
   requireAuth,
   validateBody(placePredictionSchema),
-  async (req, res, next) => {
-    try {
-      const { userId } = getAuthUser(req);
-      const { eventId, predictedOutcome, stakeAmount } = req.body;
+  asyncHandler(async (req, res) => {
+    const { userId } = getAuthUser(req);
+    const { eventId, predictedOutcome, stakeAmount } = req.body;
 
-      const prediction = await PredictionService.place({
-        userId,
-        eventId,
-        predictedOutcome,
-        stakeAmount,
-      });
+    const prediction = await PredictionService.place({
+      userId,
+      eventId,
+      predictedOutcome,
+      stakeAmount,
+    });
 
-      sendSuccess(res, { prediction }, 201);
-    } catch (error) {
-      next(error);
-    }
-  }
+    sendSuccess(res, { prediction }, 201);
+  })
 );
 
 /**
@@ -61,22 +57,18 @@ router.get(
   '/',
   requireAuth,
   validateQuery(listPredictionsSchema),
-  async (req, res, next) => {
-    try {
-      const { userId } = getAuthUser(req);
-      const { status, limit, offset } = req.query as unknown as z.infer<typeof listPredictionsSchema>;
+  asyncHandler(async (req, res) => {
+    const { userId } = getAuthUser(req);
+    const { status, limit, offset } = req.query as unknown as z.infer<typeof listPredictionsSchema>;
 
-      const result = await PredictionService.getByUser(userId, {
-        status,
-        limit,
-        offset,
-      });
+    const result = await PredictionService.getByUser(userId, {
+      status,
+      limit,
+      offset,
+    });
 
-      sendSuccess(res, result);
-    } catch (error) {
-      next(error);
-    }
-  }
+    sendSuccess(res, result);
+  })
 );
 
 /**
@@ -86,15 +78,11 @@ router.get(
 router.get(
   '/stats',
   requireAuth,
-  async (req, res, next) => {
-    try {
-      const { userId } = getAuthUser(req);
-      const stats = await PredictionService.getUserStats(userId);
-      sendSuccess(res, { stats });
-    } catch (error) {
-      next(error);
-    }
-  }
+  asyncHandler(async (req, res) => {
+    const { userId } = getAuthUser(req);
+    const stats = await PredictionService.getUserStats(userId);
+    sendSuccess(res, { stats });
+  })
 );
 
 /**
@@ -105,15 +93,11 @@ router.get(
   '/:id/cashout-value',
   requireAuth,
   validateParams(idParamSchema),
-  async (req, res, next) => {
-    try {
-      const { userId } = getAuthUser(req);
-      const result = await PredictionService.getCashoutValue(req.params.id as string, userId);
-      sendSuccess(res, result);
-    } catch (error) {
-      next(error);
-    }
-  }
+  asyncHandler(async (req, res) => {
+    const { userId } = getAuthUser(req);
+    const result = await PredictionService.getCashoutValue(req.params.id as string, userId);
+    sendSuccess(res, result);
+  })
 );
 
 /**
@@ -124,15 +108,11 @@ router.post(
   '/:id/cashout',
   requireAuth,
   validateParams(idParamSchema),
-  async (req, res, next) => {
-    try {
-      const { userId } = getAuthUser(req);
-      const prediction = await PredictionService.cashout(req.params.id as string, userId);
-      sendSuccess(res, { prediction });
-    } catch (error) {
-      next(error);
-    }
-  }
+  asyncHandler(async (req, res) => {
+    const { userId } = getAuthUser(req);
+    const prediction = await PredictionService.cashout(req.params.id as string, userId);
+    sendSuccess(res, { prediction });
+  })
 );
 
 /**
@@ -143,15 +123,11 @@ router.get(
   '/:id',
   requireAuth,
   validateParams(idParamSchema),
-  async (req, res, next) => {
-    try {
-      const { userId } = getAuthUser(req);
-      const prediction = await PredictionService.getById(req.params.id as string, userId);
-      sendSuccess(res, { prediction });
-    } catch (error) {
-      next(error);
-    }
-  }
+  asyncHandler(async (req, res) => {
+    const { userId } = getAuthUser(req);
+    const prediction = await PredictionService.getById(req.params.id as string, userId);
+    sendSuccess(res, { prediction });
+  })
 );
 
 export default router;

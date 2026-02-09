@@ -64,12 +64,7 @@ export const TokenAllowanceService = {
 async function ensureAllowance(userId: string, tx: Prisma.TransactionClient) {
   const today = startOfUtcDay(new Date());
 
-  const [allowance] = await tx.$queryRaw<
-    Array<{ id: string; tokensRemaining: number; lastResetDate: Date }>
-  >`SELECT "id", "tokensRemaining", "lastResetDate"
-    FROM "TokenAllowance"
-    WHERE "userId" = ${userId}
-    FOR UPDATE`;
+  const allowance = await lockAllowanceForUser(tx, userId);
 
   if (!allowance) {
     const credit = await LedgerService.credit(
@@ -96,9 +91,9 @@ async function ensureAllowance(userId: string, tx: Prisma.TransactionClient) {
   const daysSinceReset = daysBetween(startOfUtcDay(allowance.lastResetDate), today);
 
   if (daysSinceReset > 0) {
-    const tokensToAdd = Math.min(
-      daysSinceReset * config.tokens.dailyAllowance,
-      Math.max(0, config.tokens.maxAllowance - allowance.tokensRemaining)
+    const tokensToAdd = calculateAllowanceTopUp(
+      allowance.tokensRemaining,
+      daysSinceReset
     );
 
     if (tokensToAdd > 0) {
@@ -143,4 +138,24 @@ async function upsertAllowance(
       lastResetDate: data.lastResetDate,
     },
   });
+}
+
+function calculateAllowanceTopUp(tokensRemaining: number, daysSinceReset: number): number {
+  return Math.min(
+    daysSinceReset * config.tokens.dailyAllowance,
+    Math.max(0, config.tokens.maxAllowance - tokensRemaining)
+  );
+}
+
+async function lockAllowanceForUser(
+  tx: Prisma.TransactionClient,
+  userId: string
+): Promise<{ id: string; tokensRemaining: number; lastResetDate: Date } | null> {
+  const [allowance] = await tx.$queryRaw<
+    Array<{ id: string; tokensRemaining: number; lastResetDate: Date }>
+  >`SELECT "id", "tokensRemaining", "lastResetDate"
+    FROM "TokenAllowance"
+    WHERE "userId" = ${userId}
+    FOR UPDATE`;
+  return allowance ?? null;
 }

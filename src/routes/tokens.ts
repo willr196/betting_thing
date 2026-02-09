@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { requireAuth, getAuthUser } from '../middleware/index.js';
 import { TokenAllowanceService } from '../services/tokenAllowance.js';
 import { LedgerService } from '../services/ledger.js';
-import { sendSuccess } from '../utils/index.js';
+import { asyncHandler, sendSuccess } from '../utils/index.js';
 
 const router = Router();
 
@@ -10,8 +10,10 @@ const router = Router();
  * GET /tokens/allowance
  * Get user's token allowance and balance.
  */
-router.get('/allowance', requireAuth, async (req, res, next) => {
-  try {
+router.get(
+  '/allowance',
+  requireAuth,
+  asyncHandler(async (req, res) => {
     const { userId } = getAuthUser(req);
     const allowance = await TokenAllowanceService.getStatus(userId);
     const balance = await LedgerService.getBalance(userId);
@@ -21,9 +23,7 @@ router.get('/allowance', requireAuth, async (req, res, next) => {
       balance: balance.cached,
       verified: balance.cached === balance.calculated,
     });
-  } catch (error) {
-    next(error);
-  }
-});
+  })
+);
 
 export default router;

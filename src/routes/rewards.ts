@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { RewardsService } from '../services/rewards.js';
 import { requireAuth, validateBody, validateQuery, validateParams, getAuthUser, idParamSchema } from '../middleware/index.js';
-import { sendSuccess } from '../utils/index.js';
+import { asyncHandler, sendSuccess } from '../utils/index.js';
 
 const router = Router();
 
@@ -36,21 +36,17 @@ const listRedemptionsSchema = z.object({
 router.get(
   '/',
   validateQuery(listRewardsSchema),
-  async (req, res, next) => {
-    try {
-      const { limit, offset } = req.query as unknown as z.infer<typeof listRewardsSchema>;
+  asyncHandler(async (req, res) => {
+    const { limit, offset } = req.query as unknown as z.infer<typeof listRewardsSchema>;
 
-      const result = await RewardsService.listRewards({
-        activeOnly: true,
-        limit,
-        offset,
-      });
+    const result = await RewardsService.listRewards({
+      activeOnly: true,
+      limit,
+      offset,
+    });
 
-      sendSuccess(res, result);
-    } catch (error) {
-      next(error);
-    }
-  }
+    sendSuccess(res, result);
+  })
 );
 
 // =============================================================================
@@ -65,22 +61,18 @@ router.get(
   '/redemptions',
   requireAuth,
   validateQuery(listRedemptionsSchema),
-  async (req, res, next) => {
-    try {
-      const { userId } = getAuthUser(req);
-      const { status, limit, offset } = req.query as unknown as z.infer<typeof listRedemptionsSchema>;
+  asyncHandler(async (req, res) => {
+    const { userId } = getAuthUser(req);
+    const { status, limit, offset } = req.query as unknown as z.infer<typeof listRedemptionsSchema>;
 
-      const result = await RewardsService.getUserRedemptions(userId, {
-        status,
-        limit,
-        offset,
-      });
+    const result = await RewardsService.getUserRedemptions(userId, {
+      status,
+      limit,
+      offset,
+    });
 
-      sendSuccess(res, result);
-    } catch (error) {
-      next(error);
-    }
-  }
+    sendSuccess(res, result);
+  })
 );
 
 /**
@@ -91,15 +83,11 @@ router.get(
   '/redemptions/:id',
   requireAuth,
   validateParams(idParamSchema),
-  async (req, res, next) => {
-    try {
-      const { userId } = getAuthUser(req);
-      const redemption = await RewardsService.getRedemptionById(req.params.id as string, userId);
-      sendSuccess(res, { redemption });
-    } catch (error) {
-      next(error);
-    }
-  }
+  asyncHandler(async (req, res) => {
+    const { userId } = getAuthUser(req);
+    const redemption = await RewardsService.getRedemptionById(req.params.id as string, userId);
+    sendSuccess(res, { redemption });
+  })
 );
 
 /**
@@ -110,18 +98,14 @@ router.post(
   '/redeem',
   requireAuth,
   validateBody(redeemSchema),
-  async (req, res, next) => {
-    try {
-      const { userId } = getAuthUser(req);
-      const { rewardId } = req.body;
+  asyncHandler(async (req, res) => {
+    const { userId } = getAuthUser(req);
+    const { rewardId } = req.body;
 
-      const redemption = await RewardsService.redeem(userId, rewardId);
+    const redemption = await RewardsService.redeem(userId, rewardId);
 
-      sendSuccess(res, { redemption }, 201);
-    } catch (error) {
-      next(error);
-    }
-  }
+    sendSuccess(res, { redemption }, 201);
+  })
 );
 
 // =============================================================================
@@ -135,14 +119,10 @@ router.post(
 router.get(
   '/:id',
   validateParams(idParamSchema),
-  async (req, res, next) => {
-    try {
-      const reward = await RewardsService.getRewardById(req.params.id as string);
-      sendSuccess(res, { reward });
-    } catch (error) {
-      next(error);
-    }
-  }
+  asyncHandler(async (req, res) => {
+    const reward = await RewardsService.getRewardById(req.params.id as string);
+    sendSuccess(res, { reward });
+  })
 );
 
 /**
@@ -153,15 +133,11 @@ router.post(
   '/:id/redeem',
   requireAuth,
   validateParams(idParamSchema),
-  async (req, res, next) => {
-    try {
-      const { userId } = getAuthUser(req);
-      const redemption = await RewardsService.redeem(userId, req.params.id as string);
-      sendSuccess(res, { redemption }, 201);
-    } catch (error) {
-      next(error);
-    }
-  }
+  asyncHandler(async (req, res) => {
+    const { userId } = getAuthUser(req);
+    const redemption = await RewardsService.redeem(userId, req.params.id as string);
+    sendSuccess(res, { redemption }, 201);
+  })
 );
 
 export default router;

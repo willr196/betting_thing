@@ -8,81 +8,108 @@ type SyncStatus = {
   updatedEvents?: number;
 };
 
-const status: SyncStatus = {};
+type StatusStore<T> = {
+  get(): T;
+  set(next: T): void;
+  update(partial: Partial<T>): void;
+};
 
-export const OddsSyncService = {
-  getStatus() {
-    return status;
-  },
+function createInMemoryStatus<T extends object>(initial: T): StatusStore<T> {
+  let current = { ...initial };
+  return {
+    get: () => current,
+    set: (next) => {
+      current = { ...next };
+    },
+    update: (partial) => {
+      current = { ...current, ...partial };
+    },
+  };
+}
 
-  async runOnce(): Promise<{ updatedEvents: number }> {
-    try {
-      const activeSportKeys = await prisma.event.findMany({
-        where: {
-          status: { in: ['OPEN', 'LOCKED'] },
-          externalSportKey: { not: null },
-          externalEventId: { not: null },
-        },
-        select: {
-          externalSportKey: true,
-        },
-        distinct: ['externalSportKey'],
-      });
+export function createOddsSyncService(
+  statusStore: StatusStore<SyncStatus> = createInMemoryStatus<SyncStatus>({})
+) {
+  return {
+    getStatus() {
+      return statusStore.get();
+    },
 
-      let updatedEvents = 0;
-
-      for (const entry of activeSportKeys) {
-        if (!entry.externalSportKey) {
-          continue;
-        }
-
-        const odds = await OddsApiService.getOddsForSport(entry.externalSportKey);
-        const oddsByEvent = new Map(odds.map((item) => [item.id, item]));
-
-        const events = await prisma.event.findMany({
+    async runOnce(): Promise<{ updatedEvents: number }> {
+      try {
+        const activeSportKeys = await prisma.event.findMany({
           where: {
             status: { in: ['OPEN', 'LOCKED'] },
-            externalSportKey: entry.externalSportKey,
+            externalSportKey: { not: null },
             externalEventId: { not: null },
           },
+          select: {
+            externalSportKey: true,
+          },
+          distinct: ['externalSportKey'],
         });
 
-        for (const event of events) {
-          if (!event.externalEventId) {
+        let updatedEvents = 0;
+
+        for (const entry of activeSportKeys) {
+          if (!entry.externalSportKey) {
             continue;
           }
 
-          const match = oddsByEvent.get(event.externalEventId);
-          const outcomes = match?.bookmakers?.[0]?.markets?.[0]?.outcomes ?? [];
-          if (!match || outcomes.length === 0) {
-            continue;
-          }
+          const odds = await OddsApiService.getOddsForSport(entry.externalSportKey);
+          const oddsByEvent = new Map(odds.map((item) => [item.id, item]));
 
-          await prisma.event.update({
-            where: { id: event.id },
-            data: {
-              currentOdds: {
-                outcomes,
-                updatedAt: new Date().toISOString(),
-              } as unknown as Prisma.InputJsonValue,
-              oddsUpdatedAt: new Date(),
+          const events = await prisma.event.findMany({
+            where: {
+              status: { in: ['OPEN', 'LOCKED'] },
+              externalSportKey: entry.externalSportKey,
+              externalEventId: { not: null },
             },
           });
 
-          updatedEvents++;
+          for (const event of events) {
+            if (!event.externalEventId) {
+              continue;
+            }
+
+            const match = oddsByEvent.get(event.externalEventId);
+            const outcomes = match?.bookmakers?.[0]?.markets?.[0]?.outcomes ?? [];
+            if (!match || outcomes.length === 0) {
+              continue;
+            }
+
+            await prisma.event.update({
+              where: { id: event.id },
+              data: {
+                currentOdds: {
+                  outcomes,
+                  updatedAt: new Date().toISOString(),
+                } as unknown as Prisma.InputJsonValue,
+                oddsUpdatedAt: new Date(),
+              },
+            });
+
+            updatedEvents++;
+          }
         }
+
+        statusStore.update({
+          lastRunAt: new Date(),
+          lastError: undefined,
+          updatedEvents,
+        });
+
+        return { updatedEvents };
+      } catch (error) {
+        statusStore.update({
+          lastRunAt: new Date(),
+          lastError: error instanceof Error ? error.message : 'Unknown error',
+          updatedEvents: 0,
+        });
+        throw error;
       }
+    },
+  };
+}
 
-      status.lastRunAt = new Date();
-      status.lastError = undefined;
-      status.updatedEvents = updatedEvents;
-
-      return { updatedEvents };
-    } catch (error) {
-      status.lastRunAt = new Date();
-      status.lastError = error instanceof Error ? error.message : 'Unknown error';
-      status.updatedEvents = 0;
-      throw error;
-    }
-  },
-};
+export const OddsSyncService = createOddsSyncService();

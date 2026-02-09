@@ -5,6 +5,7 @@ import { AppError } from '../utils/index.js';
 import { TokenAllowanceService } from './tokenAllowance.js';
 import { OddsApiService } from './oddsApi.js';
 import { PointsLedgerService } from './pointsLedger.js';
+import { matchOutcomeExact, findOddsOutcome } from './outcomes.js';
 
 // =============================================================================
 // PREDICTION SERVICE
@@ -52,7 +53,8 @@ export const PredictionService = {
     }
 
     // Validate outcome against event's possible outcomes
-    if (!event.outcomes.includes(predictedOutcome)) {
+    const canonicalOutcome = matchOutcomeExact(event.outcomes, predictedOutcome);
+    if (!canonicalOutcome) {
       throw new AppError(
         'INVALID_OUTCOME',
         `Invalid outcome. Must be one of: ${event.outcomes.join(', ')}`,
@@ -70,10 +72,7 @@ export const PredictionService = {
       throw new AppError('INVALID_OUTCOME', 'Unable to fetch live odds for this event', 400);
     }
 
-    const normalizedOutcome = predictedOutcome.trim().toLowerCase();
-    const outcomeOdds = odds.outcomes.find(
-      (outcome) => outcome.name.trim().toLowerCase() === normalizedOutcome
-    );
+    const outcomeOdds = findOddsOutcome(odds.outcomes, canonicalOutcome);
 
     if (!outcomeOdds) {
       throw new AppError(
@@ -86,9 +85,7 @@ export const PredictionService = {
     // Execute prediction placement atomically — re-check event status and duplicates inside transaction
     const prediction = await prisma.$transaction(async (tx) => {
       // Re-fetch event with FOR UPDATE lock to prevent race conditions
-      const [lockedEvent] = await tx.$queryRaw<
-        Array<{ id: string; status: string; startsAt: Date }>
-      >`SELECT "id", "status", "startsAt" FROM "Event" WHERE "id" = ${eventId} FOR UPDATE`;
+      const lockedEvent = await lockEventForPrediction(tx, eventId);
 
       if (!lockedEvent) {
         throw AppError.notFound('Event');
@@ -130,7 +127,7 @@ export const PredictionService = {
         data: {
           userId,
           eventId,
-          predictedOutcome,
+          predictedOutcome: canonicalOutcome,
           stakeAmount,
           status: 'PENDING',
           originalOdds: new Prisma.Decimal(outcomeOdds.price),
@@ -337,10 +334,7 @@ export const PredictionService = {
       throw new AppError('CASHOUT_UNAVAILABLE', 'Unable to fetch live odds', 409);
     }
 
-    const outcomeOdds = odds.outcomes.find(
-      (outcome) =>
-        outcome.name.trim().toLowerCase() === prediction.predictedOutcome.trim().toLowerCase()
-    );
+    const outcomeOdds = findOddsOutcome(odds.outcomes, prediction.predictedOutcome);
 
     if (!outcomeOdds) {
       throw new AppError('CASHOUT_UNAVAILABLE', 'Outcome not found in live odds', 409);
@@ -379,9 +373,7 @@ export const PredictionService = {
 
     return prisma.$transaction(async (tx) => {
       // Lock the prediction row to prevent double cashout
-      const [prediction] = await tx.$queryRaw<
-        Array<{ id: string; userId: string; status: string; cashedOutAt: Date | null; stakeAmount: number }>
-      >`SELECT "id", "userId", "status", "cashedOutAt", "stakeAmount" FROM "Prediction" WHERE "id" = ${predictionId} FOR UPDATE`;
+      const prediction = await lockPredictionForCashout(tx, predictionId);
 
       if (!prediction || prediction.userId !== userId) {
         throw AppError.notFound('Prediction');
@@ -427,4 +419,36 @@ function calculateCashoutValue(
   const cashoutValue = Math.floor(originalStakeTokens * (originalOdds / currentOdds) * margin);
 
   return Math.max(0, cashoutValue);
+}
+
+async function lockEventForPrediction(
+  tx: Prisma.TransactionClient,
+  eventId: string
+): Promise<{ id: string; status: string; startsAt: Date } | null> {
+  const [lockedEvent] = await tx.$queryRaw<
+    Array<{ id: string; status: string; startsAt: Date }>
+  >`SELECT "id", "status", "startsAt" FROM "Event" WHERE "id" = ${eventId} FOR UPDATE`;
+  return lockedEvent ?? null;
+}
+
+async function lockPredictionForCashout(
+  tx: Prisma.TransactionClient,
+  predictionId: string
+): Promise<{
+  id: string;
+  userId: string;
+  status: string;
+  cashedOutAt: Date | null;
+  stakeAmount: number;
+} | null> {
+  const [prediction] = await tx.$queryRaw<
+    Array<{
+      id: string;
+      userId: string;
+      status: string;
+      cashedOutAt: Date | null;
+      stakeAmount: number;
+    }>
+  >`SELECT "id", "userId", "status", "cashedOutAt", "stakeAmount" FROM "Prediction" WHERE "id" = ${predictionId} FOR UPDATE`;
+  return prediction ?? null;
 }

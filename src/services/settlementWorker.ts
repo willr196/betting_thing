@@ -1,6 +1,7 @@
 import { prisma } from './database.js';
 import { OddsApiService, type OddsScore } from './oddsApi.js';
 import { EventService } from './events.js';
+import { matchOutcomeByName, normalizeOutcome } from './outcomes.js';
 
 type SettlementStatus = {
   lastRunAt?: Date;
@@ -8,72 +9,99 @@ type SettlementStatus = {
   settledEvents?: number;
 };
 
-const status: SettlementStatus = {};
-
-export const SettlementWorker = {
-  getStatus() {
-    return status;
-  },
-
-  async runOnce(): Promise<{ settledEvents: number }> {
-    try {
-      const pendingEvents = await prisma.event.findMany({
-        where: {
-          status: 'LOCKED',
-          externalSportKey: { not: null },
-          externalEventId: { not: null },
-        },
-      });
-
-      const eventsBySport = new Map<string, typeof pendingEvents>();
-      for (const event of pendingEvents) {
-        if (!event.externalSportKey) {
-          continue;
-        }
-        const existing = eventsBySport.get(event.externalSportKey) ?? [];
-        existing.push(event);
-        eventsBySport.set(event.externalSportKey, existing);
-      }
-
-      let settledEvents = 0;
-
-      for (const [sportKey, events] of eventsBySport.entries()) {
-        const scores = await OddsApiService.getScores(sportKey);
-        const scoresById = new Map(scores.map((score) => [score.id, score]));
-
-        for (const event of events) {
-          if (!event.externalEventId) {
-            continue;
-          }
-
-          const score = scoresById.get(event.externalEventId);
-          if (!score?.completed) {
-            continue;
-          }
-
-          const outcome = determineOutcome(event.outcomes, score);
-          if (!outcome) {
-            continue;
-          }
-
-          await EventService.settle(event.id, outcome, 'system');
-          settledEvents++;
-        }
-      }
-
-      status.lastRunAt = new Date();
-      status.lastError = undefined;
-      status.settledEvents = settledEvents;
-
-      return { settledEvents };
-    } catch (error) {
-      status.lastRunAt = new Date();
-      status.lastError = error instanceof Error ? error.message : 'Unknown error';
-      status.settledEvents = 0;
-      throw error;
-    }
-  },
+type StatusStore<T> = {
+  get(): T;
+  set(next: T): void;
+  update(partial: Partial<T>): void;
 };
+
+function createInMemoryStatus<T extends object>(initial: T): StatusStore<T> {
+  let current = { ...initial };
+  return {
+    get: () => current,
+    set: (next) => {
+      current = { ...next };
+    },
+    update: (partial) => {
+      current = { ...current, ...partial };
+    },
+  };
+}
+
+export function createSettlementWorker(
+  statusStore: StatusStore<SettlementStatus> = createInMemoryStatus<SettlementStatus>({})
+) {
+  return {
+    getStatus() {
+      return statusStore.get();
+    },
+
+    async runOnce(): Promise<{ settledEvents: number }> {
+      try {
+        const pendingEvents = await prisma.event.findMany({
+          where: {
+            status: 'LOCKED',
+            externalSportKey: { not: null },
+            externalEventId: { not: null },
+          },
+        });
+
+        const eventsBySport = new Map<string, typeof pendingEvents>();
+        for (const event of pendingEvents) {
+          if (!event.externalSportKey) {
+            continue;
+          }
+          const existing = eventsBySport.get(event.externalSportKey) ?? [];
+          existing.push(event);
+          eventsBySport.set(event.externalSportKey, existing);
+        }
+
+        let settledEvents = 0;
+
+        for (const [sportKey, events] of eventsBySport.entries()) {
+          const scores = await OddsApiService.getScores(sportKey);
+          const scoresById = new Map(scores.map((score) => [score.id, score]));
+
+          for (const event of events) {
+            if (!event.externalEventId) {
+              continue;
+            }
+
+            const score = scoresById.get(event.externalEventId);
+            if (!score?.completed) {
+              continue;
+            }
+
+            const outcome = determineOutcome(event.outcomes, score);
+            if (!outcome) {
+              continue;
+            }
+
+            await EventService.settle(event.id, outcome, 'system');
+            settledEvents++;
+          }
+        }
+
+        statusStore.update({
+          lastRunAt: new Date(),
+          lastError: undefined,
+          settledEvents,
+        });
+
+        return { settledEvents };
+      } catch (error) {
+        statusStore.update({
+          lastRunAt: new Date(),
+          lastError: error instanceof Error ? error.message : 'Unknown error',
+          settledEvents: 0,
+        });
+        throw error;
+      }
+    },
+  };
+}
+
+export const SettlementWorker = createSettlementWorker();
 
 function determineOutcome(outcomes: string[], score: OddsScore): string | null {
   if (!score.scores || score.scores.length < 2) {
@@ -101,25 +129,12 @@ function determineOutcome(outcomes: string[], score: OddsScore): string | null {
     winnerName = first.score > second.score ? first.name : second.name;
   }
 
-  const normalizedOutcomes = outcomes.map((outcome) => outcome.trim().toLowerCase());
   if (winnerName === 'draw') {
-    const drawIndex = normalizedOutcomes.findIndex((outcome) => outcome.includes('draw'));
-    return drawIndex >= 0 ? outcomes[drawIndex] ?? null : null;
-  }
-
-  const normalizedWinner = winnerName.toLowerCase();
-
-  // Prefer exact match first
-  let winnerIndex = normalizedOutcomes.findIndex(
-    (outcome) => outcome === normalizedWinner
-  );
-
-  // Fallback: check if outcome contains the winner name (e.g. "Team A Wins" contains "team a")
-  if (winnerIndex < 0) {
-    winnerIndex = normalizedOutcomes.findIndex(
-      (outcome) => outcome.includes(normalizedWinner)
+    const drawOutcome = outcomes.find((outcome) =>
+      normalizeOutcome(outcome).includes('draw')
     );
+    return drawOutcome ?? null;
   }
 
-  return winnerIndex >= 0 ? outcomes[winnerIndex] ?? null : null;
+  return matchOutcomeByName(outcomes, winnerName);
 }

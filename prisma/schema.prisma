@@ -274,7 +274,7 @@ enum PredictionStatus {
 // =============================================================================
 // REWARD
 // =============================================================================
-// Items that can be redeemed with tokens.
+// Items that can be redeemed with points.
 // Admin-managed catalog.
 
 model Reward {
@@ -311,7 +311,7 @@ model Reward {
 // REDEMPTION
 // =============================================================================
 // A user's claim on a reward.
-// Tokens are deducted IMMEDIATELY on creation.
+// Points are deducted IMMEDIATELY on creation.
 // Admin fulfils manually and updates status.
 
 model Redemption {
@@ -348,5 +348,5 @@ model Redemption {
 enum RedemptionStatus {
   PENDING    // Awaiting fulfilment
   FULFILLED  // Reward delivered to user
-  CANCELLED  // Cancelled, tokens refunded
+  CANCELLED  // Cancelled, points refunded
 }

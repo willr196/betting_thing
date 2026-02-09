@@ -7,7 +7,7 @@ import { prisma } from '../services/database.js';
 import { SettlementWorker } from '../services/settlementWorker.js';
 import { OddsSyncService } from '../services/oddsSync.js';
 import { requireAuth, requireAdmin, validateBody, validateParams, getAuthUser, idParamSchema, positiveIntSchema, futureDateSchema } from '../middleware/index.js';
-import { sendSuccess } from '../utils/index.js';
+import { asyncHandler, parseLimitOffset, sendSuccess } from '../utils/index.js';
 
 const router = Router();
 
@@ -70,35 +70,31 @@ const adminCreditSchema = z.object({
 router.post(
   '/events',
   validateBody(createEventSchema),
-  async (req, res, next) => {
-    try {
-      const { userId } = getAuthUser(req);
-      const {
-        title,
-        description,
-        startsAt,
-        outcomes,
-        payoutMultiplier,
-        externalEventId,
-        externalSportKey,
-      } = req.body;
+  asyncHandler(async (req, res) => {
+    const { userId } = getAuthUser(req);
+    const {
+      title,
+      description,
+      startsAt,
+      outcomes,
+      payoutMultiplier,
+      externalEventId,
+      externalSportKey,
+    } = req.body;
 
-      const event = await EventService.create({
-        title,
-        description,
-        startsAt: new Date(startsAt),
-        outcomes,
-        payoutMultiplier,
-        createdBy: userId,
-        externalEventId,
-        externalSportKey,
-      });
+    const event = await EventService.create({
+      title,
+      description,
+      startsAt: new Date(startsAt),
+      outcomes,
+      payoutMultiplier,
+      createdBy: userId,
+      externalEventId,
+      externalSportKey,
+    });
 
-      sendSuccess(res, { event }, 201);
-    } catch (error) {
-      next(error);
-    }
-  }
+    sendSuccess(res, { event }, 201);
+  })
 );
 
 /**
@@ -108,14 +104,10 @@ router.post(
 router.post(
   '/events/:id/lock',
   validateParams(idParamSchema),
-  async (req, res, next) => {
-    try {
-      const event = await EventService.lock(req.params.id as string);
-      sendSuccess(res, { event });
-    } catch (error) {
-      next(error);
-    }
-  }
+  asyncHandler(async (req, res) => {
+    const event = await EventService.lock(req.params.id as string);
+    sendSuccess(res, { event });
+  })
 );
 
 /**
@@ -126,22 +118,18 @@ router.post(
   '/events/:id/settle',
   validateParams(idParamSchema),
   validateBody(settleEventSchema),
-  async (req, res, next) => {
-    try {
-      const { userId } = getAuthUser(req);
-      const { finalOutcome } = req.body;
+  asyncHandler(async (req, res) => {
+    const { userId } = getAuthUser(req);
+    const { finalOutcome } = req.body;
 
-      const result = await EventService.settle(
-        req.params.id as string,
-        finalOutcome,
-        userId
-      );
+    const result = await EventService.settle(
+      req.params.id as string,
+      finalOutcome,
+      userId
+    );
 
-      sendSuccess(res, { settlement: result });
-    } catch (error) {
-      next(error);
-    }
-  }
+    sendSuccess(res, { settlement: result });
+  })
 );
 
 /**
@@ -151,15 +139,11 @@ router.post(
 router.post(
   '/events/:id/cancel',
   validateParams(idParamSchema),
-  async (req, res, next) => {
-    try {
-      const { userId } = getAuthUser(req);
-      const result = await EventService.cancel(req.params.id as string, userId);
-      sendSuccess(res, { cancellation: result });
-    } catch (error) {
-      next(error);
-    }
-  }
+  asyncHandler(async (req, res) => {
+    const { userId } = getAuthUser(req);
+    const result = await EventService.cancel(req.params.id as string, userId);
+    sendSuccess(res, { cancellation: result });
+  })
 );
 
 /**
@@ -168,14 +152,10 @@ router.post(
  */
 router.post(
   '/events/auto-lock',
-  async (req, res, next) => {
-    try {
-      const count = await EventService.autoLockStartedEvents();
-      sendSuccess(res, { locked: count });
-    } catch (error) {
-      next(error);
-    }
-  }
+  asyncHandler(async (_req, res) => {
+    const count = await EventService.autoLockStartedEvents();
+    sendSuccess(res, { locked: count });
+  })
 );
 
 /**
@@ -184,14 +164,10 @@ router.post(
  */
 router.post(
   '/odds/sync',
-  async (_req, res, next) => {
-    try {
-      const result = await OddsSyncService.runOnce();
-      sendSuccess(res, result);
-    } catch (error) {
-      next(error);
-    }
-  }
+  asyncHandler(async (_req, res) => {
+    const result = await OddsSyncService.runOnce();
+    sendSuccess(res, result);
+  })
 );
 
 // =============================================================================
@@ -205,14 +181,10 @@ router.post(
 router.post(
   '/rewards',
   validateBody(createRewardSchema),
-  async (req, res, next) => {
-    try {
-      const reward = await RewardsService.createReward(req.body);
-      sendSuccess(res, { reward }, 201);
-    } catch (error) {
-      next(error);
-    }
-  }
+  asyncHandler(async (req, res) => {
+    const reward = await RewardsService.createReward(req.body);
+    sendSuccess(res, { reward }, 201);
+  })
 );
 
 /**
@@ -223,14 +195,10 @@ router.patch(
   '/rewards/:id',
   validateParams(idParamSchema),
   validateBody(updateRewardSchema),
-  async (req, res, next) => {
-    try {
-      const reward = await RewardsService.updateReward(req.params.id as string, req.body);
-      sendSuccess(res, { reward });
-    } catch (error) {
-      next(error);
-    }
-  }
+  asyncHandler(async (req, res) => {
+    const reward = await RewardsService.updateReward(req.params.id as string, req.body);
+    sendSuccess(res, { reward });
+  })
 );
 
 /**
@@ -239,22 +207,20 @@ router.patch(
  */
 router.get(
   '/rewards',
-  async (req, res, next) => {
-    try {
-      const limit = Math.min(parseInt(req.query.limit as string) || 50, 100);
-      const offset = parseInt(req.query.offset as string) || 0;
+  asyncHandler(async (req, res) => {
+    const { limit, offset } = parseLimitOffset(req.query as Record<string, unknown>, {
+      defaultLimit: 50,
+      maxLimit: 100,
+    });
 
-      const result = await RewardsService.listRewards({
-        activeOnly: false,
-        limit,
-        offset,
-      });
+    const result = await RewardsService.listRewards({
+      activeOnly: false,
+      limit,
+      offset,
+    });
 
-      sendSuccess(res, result);
-    } catch (error) {
-      next(error);
-    }
-  }
+    sendSuccess(res, result);
+  })
 );
 
 // =============================================================================
@@ -267,23 +233,22 @@ router.get(
  */
 router.get(
   '/redemptions',
-  async (req, res, next) => {
-    try {
-      const status = req.query.status as 'PENDING' | 'FULFILLED' | 'CANCELLED' | undefined;
-      const limit = Math.min(parseInt(req.query.limit as string) || 50, 100);
-      const offset = parseInt(req.query.offset as string) || 0;
+  asyncHandler(async (req, res) => {
+    const query = req.query as Record<string, string | undefined>;
+    const status = query.status as 'PENDING' | 'FULFILLED' | 'CANCELLED' | undefined;
+    const { limit, offset } = parseLimitOffset(query as Record<string, unknown>, {
+      defaultLimit: 50,
+      maxLimit: 100,
+    });
 
-      const result = await RewardsService.listRedemptions({
-        status,
-        limit,
-        offset,
-      });
+    const result = await RewardsService.listRedemptions({
+      status,
+      limit,
+      offset,
+    });
 
-      sendSuccess(res, result);
-    } catch (error) {
-      next(error);
-    }
-  }
+    sendSuccess(res, result);
+  })
 );
 
 /**
@@ -294,40 +259,32 @@ router.post(
   '/redemptions/:id/fulfil',
   validateParams(idParamSchema),
   validateBody(fulfilRedemptionSchema),
-  async (req, res, next) => {
-    try {
-      const { userId } = getAuthUser(req);
-      const { fulfilmentNote } = req.body;
+  asyncHandler(async (req, res) => {
+    const { userId } = getAuthUser(req);
+    const { fulfilmentNote } = req.body;
 
-      const redemption = await RewardsService.fulfil(
-        req.params.id as string,
-        userId,
-        fulfilmentNote
-      );
+    const redemption = await RewardsService.fulfil(
+      req.params.id as string,
+      userId,
+      fulfilmentNote
+    );
 
-      sendSuccess(res, { redemption });
-    } catch (error) {
-      next(error);
-    }
-  }
+    sendSuccess(res, { redemption });
+  })
 );
 
 /**
  * POST /admin/redemptions/:id/cancel
- * Cancel a redemption and refund tokens.
+ * Cancel a redemption and refund points.
  */
 router.post(
   '/redemptions/:id/cancel',
   validateParams(idParamSchema),
-  async (req, res, next) => {
-    try {
-      const { userId } = getAuthUser(req);
-      const redemption = await RewardsService.cancel(req.params.id as string, userId);
-      sendSuccess(res, { redemption });
-    } catch (error) {
-      next(error);
-    }
-  }
+  asyncHandler(async (req, res) => {
+    const { userId } = getAuthUser(req);
+    const redemption = await RewardsService.cancel(req.params.id as string, userId);
+    sendSuccess(res, { redemption });
+  })
 );
 
 // =============================================================================
@@ -340,36 +297,34 @@ router.post(
  */
 router.get(
   '/users',
-  async (req, res, next) => {
-    try {
-      const limit = Math.min(parseInt(req.query.limit as string) || 50, 100);
-      const offset = parseInt(req.query.offset as string) || 0;
+  asyncHandler(async (req, res) => {
+    const { limit, offset } = parseLimitOffset(req.query as Record<string, unknown>, {
+      defaultLimit: 50,
+      maxLimit: 100,
+    });
 
-      const [users, total] = await Promise.all([
-        prisma.user.findMany({
-          select: {
-            id: true,
-            email: true,
-            tokenBalance: true,
-            isAdmin: true,
-            isVerified: true,
-            createdAt: true,
-            _count: {
-              select: { predictions: true, redemptions: true },
-            },
+    const [users, total] = await Promise.all([
+      prisma.user.findMany({
+        select: {
+          id: true,
+          email: true,
+          tokenBalance: true,
+          isAdmin: true,
+          isVerified: true,
+          createdAt: true,
+          _count: {
+            select: { predictions: true, redemptions: true },
           },
-          orderBy: { createdAt: 'desc' },
-          take: limit,
-          skip: offset,
-        }),
-        prisma.user.count(),
-      ]);
+        },
+        orderBy: { createdAt: 'desc' },
+        take: limit,
+        skip: offset,
+      }),
+      prisma.user.count(),
+    ]);
 
-      sendSuccess(res, { users, total });
-    } catch (error) {
-      next(error);
-    }
-  }
+    sendSuccess(res, { users, total });
+  })
 );
 
 /**
@@ -379,14 +334,10 @@ router.get(
 router.get(
   '/users/:id/balance',
   validateParams(idParamSchema),
-  async (req, res, next) => {
-    try {
-      const check = await LedgerService.verifyBalance(req.params.id as string);
-      sendSuccess(res, { balance: check });
-    } catch (error) {
-      next(error);
-    }
-  }
+  asyncHandler(async (req, res) => {
+    const check = await LedgerService.verifyBalance(req.params.id as string);
+    sendSuccess(res, { balance: check });
+  })
 );
 
 /**
@@ -396,14 +347,10 @@ router.get(
 router.post(
   '/users/:id/balance/repair',
   validateParams(idParamSchema),
-  async (req, res, next) => {
-    try {
-      const check = await LedgerService.repairBalance(req.params.id as string);
-      sendSuccess(res, { balance: check });
-    } catch (error) {
-      next(error);
-    }
-  }
+  asyncHandler(async (req, res) => {
+    const check = await LedgerService.repairBalance(req.params.id as string);
+    sendSuccess(res, { balance: check });
+  })
 );
 
 /**
@@ -413,22 +360,18 @@ router.post(
 router.post(
   '/tokens/credit',
   validateBody(adminCreditSchema),
-  async (req, res, next) => {
-    try {
-      const { userId, amount, description } = req.body;
+  asyncHandler(async (req, res) => {
+    const { userId, amount, description } = req.body;
 
-      const result = await LedgerService.credit({
-        userId,
-        amount,
-        type: 'ADMIN_CREDIT',
-        description: description ?? 'Admin credit',
-      });
+    const result = await LedgerService.credit({
+      userId,
+      amount,
+      type: 'ADMIN_CREDIT',
+      description: description ?? 'Admin credit',
+    });
 
-      sendSuccess(res, result, 201);
-    } catch (error) {
-      next(error);
-    }
-  }
+    sendSuccess(res, result, 201);
+  })
 );
 
 // =============================================================================
@@ -441,49 +384,45 @@ router.post(
  */
 router.get(
   '/stats',
-  async (req, res, next) => {
-    try {
-      const [
-        userCount,
-        eventCount,
-        predictionCount,
-        redemptionCount,
-        totalTokensInCirculation,
-      ] = await Promise.all([
-        prisma.user.count(),
-        prisma.event.count(),
-        prisma.prediction.count(),
-        prisma.redemption.count(),
-        prisma.user.aggregate({ _sum: { tokenBalance: true } }),
-      ]);
+  asyncHandler(async (_req, res) => {
+    const [
+      userCount,
+      eventCount,
+      predictionCount,
+      redemptionCount,
+      totalTokensInCirculation,
+    ] = await Promise.all([
+      prisma.user.count(),
+      prisma.event.count(),
+      prisma.prediction.count(),
+      prisma.redemption.count(),
+      prisma.user.aggregate({ _sum: { tokenBalance: true } }),
+    ]);
 
-      const pendingRedemptions = await prisma.redemption.count({
-        where: { status: 'PENDING' },
-      });
+    const pendingRedemptions = await prisma.redemption.count({
+      where: { status: 'PENDING' },
+    });
 
-      const openEvents = await prisma.event.count({
-        where: { status: 'OPEN' },
-      });
+    const openEvents = await prisma.event.count({
+      where: { status: 'OPEN' },
+    });
 
-      sendSuccess(res, {
-        stats: {
-          users: userCount,
-          events: {
-            total: eventCount,
-            open: openEvents,
-          },
-          predictions: predictionCount,
-          redemptions: {
-            total: redemptionCount,
-            pending: pendingRedemptions,
-          },
-          tokensInCirculation: totalTokensInCirculation._sum.tokenBalance ?? 0,
+    sendSuccess(res, {
+      stats: {
+        users: userCount,
+        events: {
+          total: eventCount,
+          open: openEvents,
         },
-      });
-    } catch (error) {
-      next(error);
-    }
-  }
+        predictions: predictionCount,
+        redemptions: {
+          total: redemptionCount,
+          pending: pendingRedemptions,
+        },
+        tokensInCirculation: totalTokensInCirculation._sum.tokenBalance ?? 0,
+      },
+    });
+  })
 );
 
 // =============================================================================
@@ -496,14 +435,10 @@ router.get(
  */
 router.post(
   '/settlement/run',
-  async (_req, res, next) => {
-    try {
-      const result = await SettlementWorker.runOnce();
-      sendSuccess(res, result);
-    } catch (error) {
-      next(error);
-    }
-  }
+  asyncHandler(async (_req, res) => {
+    const result = await SettlementWorker.runOnce();
+    sendSuccess(res, result);
+  })
 );
 
 /**
@@ -512,13 +447,9 @@ router.post(
  */
 router.get(
   '/settlement/status',
-  async (_req, res, next) => {
-    try {
-      sendSuccess(res, { status: SettlementWorker.getStatus() });
-    } catch (error) {
-      next(error);
-    }
-  }
+  asyncHandler(async (_req, res) => {
+    sendSuccess(res, { status: SettlementWorker.getStatus() });
+  })
 );
 
 export default router;

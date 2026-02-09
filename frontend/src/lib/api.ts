@@ -18,21 +18,44 @@ import type {
 
 const API_BASE = '/api';
 
+type StorageLike = {
+  getItem(key: string): string | null;
+  setItem(key: string, value: string): void;
+  removeItem(key: string): void;
+};
+
+function getDefaultStorage(): StorageLike | null {
+  if (typeof window === 'undefined') {
+    return null;
+  }
+
+  return window.localStorage ?? null;
+}
+
 class ApiClient {
   private token: string | null = null;
+  private storage: StorageLike | null;
+
+  constructor(storage: StorageLike | null = getDefaultStorage()) {
+    this.storage = storage;
+  }
 
   setToken(token: string | null) {
     this.token = token;
+    if (!this.storage) {
+      return;
+    }
+
     if (token) {
-      localStorage.setItem('token', token);
+      this.storage.setItem('token', token);
     } else {
-      localStorage.removeItem('token');
+      this.storage.removeItem('token');
     }
   }
 
   getToken(): string | null {
-    if (!this.token) {
-      this.token = localStorage.getItem('token');
+    if (!this.token && this.storage) {
+      this.token = this.storage.getItem('token');
     }
     return this.token;
   }

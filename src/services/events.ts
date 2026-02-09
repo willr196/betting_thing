@@ -183,7 +183,7 @@ export const EventService = {
 
         if (isWinner) {
           const odds = prediction.originalOdds?.toNumber() ?? event.payoutMultiplier;
-          const payout = Math.floor(prediction.stakeAmount * odds);
+          const payout = calculatePayout(prediction.stakeAmount, odds);
 
           await PointsLedgerService.credit(
             {
@@ -344,3 +344,7 @@ export const EventService = {
     });
   },
 };
+
+function calculatePayout(stakeAmount: number, odds: number): number {
+  return Math.floor(stakeAmount * odds);
+}
