@@ -11,6 +11,8 @@ import { matchOutcomeExact, findOddsOutcome } from './outcomes.js';
 // PREDICTION SERVICE
 // =============================================================================
 
+const CASHOUT_ODDS_MAX_AGE_MS = 5 * 60 * 1000; // 5 minutes
+
 export const PredictionService = {
   /**
    * Place a prediction on an event.
@@ -334,6 +336,16 @@ export const PredictionService = {
       throw new AppError('CASHOUT_UNAVAILABLE', 'Unable to fetch live odds', 409);
     }
 
+    const oddsUpdatedAtMs = new Date(odds.updatedAt).getTime();
+    const oddsAgeMs = Date.now() - oddsUpdatedAtMs;
+    if (!Number.isFinite(oddsAgeMs) || oddsAgeMs > CASHOUT_ODDS_MAX_AGE_MS) {
+      throw new AppError(
+        'CASHOUT_UNAVAILABLE',
+        'Odds data is too stale for cashout. Please try again in a moment.',
+        409
+      );
+    }
+
     const outcomeOdds = findOddsOutcome(odds.outcomes, prediction.predictedOutcome);
 
     if (!outcomeOdds) {
@@ -357,6 +369,9 @@ export const PredictionService = {
       predictionId,
       cashoutValue,
       currentOdds: outcomeOdds.price,
+      originalOdds,
+      eventStarted,
+      oddsAge: Math.round(oddsAgeMs / 1000), // seconds
       updatedAt: odds.updatedAt,
     };
   },

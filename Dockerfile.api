@@ -1,0 +1,29 @@
+FROM node:20-alpine
+
+WORKDIR /app
+
+# Install dependencies first (cached layer)
+COPY package.json package-lock.json* ./
+RUN npm install
+
+# Copy prisma schema and generate client
+COPY prisma ./prisma
+RUN npx prisma generate
+
+# Copy source code
+COPY src ./src
+COPY tsconfig.json ./
+
+# Expose port
+EXPOSE 3000
+
+# Start with migration + seed + dev server
+CMD sh -c "\
+  echo '⏳ Waiting for database...' && \
+  npx prisma migrate deploy 2>/dev/null || npx prisma db push --accept-data-loss && \
+  echo '✅ Database ready' && \
+  echo '🌱 Seeding database...' && \
+  npx tsx prisma/seed.ts 2>/dev/null || echo '(seed skipped or already seeded)' && \
+  echo '🚀 Starting API server...' && \
+  npx tsx watch src/index.ts \
+"

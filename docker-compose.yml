@@ -1,0 +1,101 @@
+version: '3.8'
+
+services:
+  # ==========================================================================
+  # PostgreSQL Database
+  # ==========================================================================
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: prediction
+      POSTGRES_PASSWORD: prediction_dev_2024
+      POSTGRES_DB: prediction_platform
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U prediction -d prediction_platform"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ==========================================================================
+  # API Server (Backend)
+  # ==========================================================================
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      DATABASE_URL: postgresql://prediction:prediction_dev_2024@db:5432/prediction_platform?schema=public
+      JWT_SECRET: dev-secret-change-me-in-production-abc123
+      JWT_EXPIRES_IN: 7d
+      PORT: 3000
+      NODE_ENV: development
+      DAILY_ALLOWANCE_TOKENS: 5
+      MAX_ALLOWANCE_TOKENS: 35
+      MIN_STAKE_AMOUNT: 1
+      MAX_STAKE_AMOUNT: 35
+      SIGNUP_BONUS_TOKENS: 5
+      THE_ODDS_API_KEY: ${THE_ODDS_API_KEY:-}
+      THE_ODDS_API_BASE_URL: https://api.the-odds-api.com/v4
+      THE_ODDS_API_REGIONS: uk
+      THE_ODDS_API_MARKETS: h2h
+      ODDS_SYNC_INTERVAL_SECONDS: 300
+      SETTLEMENT_INTERVAL_SECONDS: 300
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./src:/app/src
+      - ./prisma:/app/prisma
+
+  # ==========================================================================
+  # Frontend (React)
+  # ==========================================================================
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    restart: unless-stopped
+    ports:
+      - "5173:5173"
+    environment:
+      # Keep API same-origin by default so phone/ngrok access "just works" via Vite proxy.
+      # Override to an absolute URL (e.g. https://<api>.ngrok-free.app/api) if you want the
+      # browser to call the API directly.
+      VITE_API_URL: /api
+      # Used by Vite's /api dev proxy when VITE_API_URL is unset or set to a relative path.
+      API_PROXY_TARGET: http://api:3000
+    depends_on:
+      - api
+    volumes:
+      - ./frontend/src:/app/frontend/src
+
+  # ==========================================================================
+  # ngrok Tunnel (Phone Access)
+  # ==========================================================================
+  # Uncomment after setting your ngrok auth token in .env
+  # ngrok:
+  #   image: ngrok/ngrok:latest
+  #   restart: unless-stopped
+  #   command:
+  #     - "start"
+  #     - "--all"
+  #     - "--config"
+  #     - "/etc/ngrok.yml"
+  #   ports:
+  #     - "4040:4040"  # ngrok dashboard
+  #   volumes:
+  #     - ./ngrok.yml:/etc/ngrok.yml
+  #   depends_on:
+  #     - frontend
+  #     - api
+
+volumes:
+  postgres_data:

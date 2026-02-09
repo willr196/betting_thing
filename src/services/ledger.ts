@@ -154,25 +154,6 @@ export const LedgerService = {
    * Credit winnings for a successful prediction.
    * Called during event settlement.
    */
-  async creditPredictionWin(
-    userId: string,
-    amount: number,
-    predictionId: string,
-    tx?: Prisma.TransactionClient
-  ): Promise<{ transactionId: string; newBalance: number }> {
-    return this.credit(
-      {
-        userId,
-        amount,
-        type: 'PREDICTION_WIN',
-        referenceType: 'PREDICTION',
-        referenceId: predictionId,
-        description: `Winnings for prediction ${predictionId}`,
-      },
-      tx
-    );
-  },
-
   /**
    * Refund stake for a cancelled event.
    * Called when an event is cancelled.

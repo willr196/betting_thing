@@ -20,8 +20,14 @@ const app = express();
 app.use(helmet());
 
 // CORS configuration
+// In development, default to reflecting the request origin so docker/ngrok/browser
+// setups don't require manual allow-listing.
+const corsOrigin = config.isDev
+  ? (config.server.frontendUrl ?? true)
+  : (config.server.frontendUrl ?? false);
+
 app.use(cors({
-  origin: config.server.frontendUrl || false,
+  origin: corsOrigin,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
   credentials: true,

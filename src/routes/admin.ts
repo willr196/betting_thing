@@ -391,12 +391,19 @@ router.get(
       predictionCount,
       redemptionCount,
       totalTokensInCirculation,
+      totalPointsInCirculation,
+      totalPointsPaidOut,
     ] = await Promise.all([
       prisma.user.count(),
       prisma.event.count(),
       prisma.prediction.count(),
       prisma.redemption.count(),
       prisma.user.aggregate({ _sum: { tokenBalance: true } }),
+      prisma.user.aggregate({ _sum: { pointsBalance: true } }),
+      prisma.pointsTransaction.aggregate({
+        where: { amount: { gt: 0 } },
+        _sum: { amount: true },
+      }),
     ]);
 
     const pendingRedemptions = await prisma.redemption.count({
@@ -407,19 +414,30 @@ router.get(
       where: { status: 'OPEN' },
     });
 
+    const settledEvents = await prisma.event.count({
+      where: { status: 'SETTLED' },
+    });
+
     sendSuccess(res, {
       stats: {
         users: userCount,
         events: {
           total: eventCount,
           open: openEvents,
+          settled: settledEvents,
         },
         predictions: predictionCount,
         redemptions: {
           total: redemptionCount,
           pending: pendingRedemptions,
         },
-        tokensInCirculation: totalTokensInCirculation._sum.tokenBalance ?? 0,
+        tokens: {
+          inCirculation: totalTokensInCirculation._sum.tokenBalance ?? 0,
+        },
+        points: {
+          inCirculation: totalPointsInCirculation._sum.pointsBalance ?? 0,
+          totalPaidOut: totalPointsPaidOut._sum.amount ?? 0,
+        },
       },
     });
   })

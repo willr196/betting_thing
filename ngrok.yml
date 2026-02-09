@@ -1,0 +1,15 @@
+# ngrok configuration
+# Replace YOUR_AUTH_TOKEN with your token from https://dashboard.ngrok.com/get-started/your-authtoken
+
+version: 2
+authtoken: YOUR_AUTH_TOKEN
+
+tunnels:
+  frontend:
+    addr: frontend:5173
+    proto: http
+    inspect: false
+  api:
+    addr: api:3000
+    proto: http
+    inspect: false

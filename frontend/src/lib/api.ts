@@ -16,7 +16,9 @@ import type {
 // API CLIENT
 // =============================================================================
 
-const API_BASE = '/api';
+// Default to a same-origin API path so Vite's dev proxy can be used.
+// Allow overrides (e.g. docker/ngrok) via VITE_API_URL like "http://localhost:3000/api".
+const API_BASE = (import.meta.env.VITE_API_URL ?? '/api').replace(/\/+$/, '');
 
 type StorageLike = {
   getItem(key: string): string | null;

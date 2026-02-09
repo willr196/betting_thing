@@ -139,181 +139,199 @@ export const EventService = {
     finalOutcome: string,
     settledBy: string
   ): Promise<SettlementResult> {
-    // Get event with all predictions
-    const event = await prisma.event.findUnique({
-      where: { id: eventId },
-      include: {
-        predictions: {
-          where: { status: 'PENDING' },
-          include: { user: true },
-        },
-      },
-    });
+    return prisma.$transaction(
+      async (tx) => {
+        const settledAt = new Date();
 
-    if (!event) {
-      throw AppError.notFound('Event');
-    }
+        // Lock the event row and verify status inside the transaction.
+        const [lockedEvent] = await tx.$queryRaw<
+          Array<{
+            id: string;
+            status: string;
+            outcomes: string[];
+            payoutMultiplier: number;
+          }>
+        >`SELECT "id", "status", "outcomes", "payoutMultiplier"
+          FROM "Event"
+          WHERE "id" = ${eventId}
+          FOR UPDATE`;
 
-    if (event.status === 'SETTLED') {
-      throw new AppError('EVENT_ALREADY_SETTLED', 'Event has already been settled', 400);
-    }
-
-    if (event.status === 'CANCELLED') {
-      throw new AppError('EVENT_ALREADY_SETTLED', 'Event was cancelled', 400);
-    }
-
-    // Validate outcome
-    if (!event.outcomes.includes(finalOutcome)) {
-      throw new AppError(
-        'INVALID_OUTCOME',
-        `Invalid outcome. Must be one of: ${event.outcomes.join(', ')}`,
-        400
-      );
-    }
-
-    // Execute settlement in a transaction
-    const result = await prisma.$transaction(async (tx) => {
-      let winners = 0;
-      let losers = 0;
-      let totalPayout = 0;
-
-      // Process each prediction
-      for (const prediction of event.predictions) {
-        const isWinner = prediction.predictedOutcome === finalOutcome;
-
-        if (isWinner) {
-          const odds = prediction.originalOdds?.toNumber() ?? event.payoutMultiplier;
-          const payout = calculatePayout(prediction.stakeAmount, odds);
-
-          await PointsLedgerService.credit(
-            {
-              userId: prediction.userId,
-              amount: payout,
-              type: 'PREDICTION_WIN',
-              referenceType: 'PREDICTION',
-              referenceId: prediction.id,
-              description: `Winnings for prediction ${prediction.id}`,
-            },
-            tx
-          );
-
-          // Update prediction
-          await tx.prediction.update({
-            where: { id: prediction.id },
-            data: {
-              status: 'WON',
-              payout,
-              settledAt: new Date(),
-            },
-          });
-
-          winners++;
-          totalPayout += payout;
-        } else {
-          // Mark as lost (tokens already deducted at stake time)
-          await tx.prediction.update({
-            where: { id: prediction.id },
-            data: {
-              status: 'LOST',
-              payout: 0,
-              settledAt: new Date(),
-            },
-          });
-
-          losers++;
+        if (!lockedEvent) {
+          throw AppError.notFound('Event');
         }
-      }
 
-      // Update event
-      await tx.event.update({
-        where: { id: eventId },
-        data: {
-          status: 'SETTLED',
+        if (lockedEvent.status === 'SETTLED') {
+          throw new AppError('EVENT_ALREADY_SETTLED', 'Event has already been settled', 400);
+        }
+
+        if (lockedEvent.status === 'CANCELLED') {
+          throw new AppError('EVENT_ALREADY_SETTLED', 'Event was cancelled', 400);
+        }
+
+        // Validate outcome against event's possible outcomes.
+        if (!lockedEvent.outcomes.includes(finalOutcome)) {
+          throw new AppError(
+            'INVALID_OUTCOME',
+            `Invalid outcome. Must be one of: ${lockedEvent.outcomes.join(', ')}`,
+            400
+          );
+        }
+
+        // Fetch PENDING predictions inside the transaction to avoid stale reads.
+        const predictions = await tx.prediction.findMany({
+          where: {
+            eventId,
+            status: 'PENDING',
+          },
+        });
+
+        let winners = 0;
+        let losers = 0;
+        let totalPayout = 0;
+
+        for (const prediction of predictions) {
+          const isWinner = prediction.predictedOutcome === finalOutcome;
+
+          if (isWinner) {
+            const odds = prediction.originalOdds?.toNumber() ?? lockedEvent.payoutMultiplier;
+            const payout = calculatePayout(prediction.stakeAmount, odds);
+
+            await PointsLedgerService.credit(
+              {
+                userId: prediction.userId,
+                amount: payout,
+                type: 'PREDICTION_WIN',
+                referenceType: 'PREDICTION',
+                referenceId: prediction.id,
+                description: `Winnings for prediction ${prediction.id}`,
+              },
+              tx
+            );
+
+            await tx.prediction.update({
+              where: { id: prediction.id },
+              data: {
+                status: 'WON',
+                payout,
+                settledAt,
+              },
+            });
+
+            winners++;
+            totalPayout += payout;
+          } else {
+            await tx.prediction.update({
+              where: { id: prediction.id },
+              data: {
+                status: 'LOST',
+                payout: 0,
+                settledAt,
+              },
+            });
+
+            losers++;
+          }
+        }
+
+        await tx.event.update({
+          where: { id: eventId },
+          data: {
+            status: 'SETTLED',
+            finalOutcome,
+            settledBy,
+            settledAt,
+          },
+        });
+
+        return {
+          eventId,
           finalOutcome,
-          settledBy,
-          settledAt: new Date(),
-        },
-      });
-
-      return {
-        eventId,
-        finalOutcome,
-        totalPredictions: event.predictions.length,
-        winners,
-        losers,
-        totalPayout,
-        settledAt: new Date(),
-      };
-    });
-
-    return result;
+          totalPredictions: predictions.length,
+          winners,
+          losers,
+          totalPayout,
+          settledAt,
+        };
+      },
+      {
+        // Safety: avoid holding row locks indefinitely if something goes wrong.
+        timeout: 30000,
+      }
+    );
   },
 
   /**
    * Cancel an event and refund all stakes.
    */
   async cancel(eventId: string, cancelledBy: string): Promise<{ refunded: number }> {
-    const event = await prisma.event.findUnique({
-      where: { id: eventId },
-      include: {
-        predictions: {
-          where: { status: 'PENDING' },
-        },
-      },
-    });
+    return prisma.$transaction(
+      async (tx) => {
+        const cancelledAt = new Date();
 
-    if (!event) {
-      throw AppError.notFound('Event');
-    }
+        // Lock the event row and verify status inside the transaction.
+        const [lockedEvent] = await tx.$queryRaw<
+          Array<{ id: string; status: string }>
+        >`SELECT "id", "status"
+          FROM "Event"
+          WHERE "id" = ${eventId}
+          FOR UPDATE`;
 
-    if (event.status === 'SETTLED') {
-      throw new AppError('EVENT_ALREADY_SETTLED', 'Cannot cancel a settled event', 400);
-    }
+        if (!lockedEvent) {
+          throw AppError.notFound('Event');
+        }
 
-    if (event.status === 'CANCELLED') {
-      throw new AppError('EVENT_ALREADY_SETTLED', 'Event is already cancelled', 400);
-    }
+        if (lockedEvent.status === 'SETTLED') {
+          throw new AppError('EVENT_ALREADY_SETTLED', 'Cannot cancel a settled event', 400);
+        }
 
-    // Execute cancellation in a transaction
-    const result = await prisma.$transaction(async (tx) => {
-      let refunded = 0;
+        if (lockedEvent.status === 'CANCELLED') {
+          throw new AppError('EVENT_ALREADY_SETTLED', 'Event is already cancelled', 400);
+        }
 
-      // Refund all pending predictions
-      for (const prediction of event.predictions) {
-        // Refund stake
-        await LedgerService.refundPrediction(
-          prediction.userId,
-          prediction.stakeAmount,
-          prediction.id,
-          tx
-        );
-
-        // Update prediction status
-        await tx.prediction.update({
-          where: { id: prediction.id },
-          data: {
-            status: 'REFUNDED',
-            settledAt: new Date(),
+        // Fetch PENDING predictions inside the transaction to avoid stale reads.
+        const predictions = await tx.prediction.findMany({
+          where: {
+            eventId,
+            status: 'PENDING',
           },
         });
 
-        refunded++;
+        let refunded = 0;
+
+        for (const prediction of predictions) {
+          await LedgerService.refundPrediction(
+            prediction.userId,
+            prediction.stakeAmount,
+            prediction.id,
+            tx
+          );
+
+          await tx.prediction.update({
+            where: { id: prediction.id },
+            data: {
+              status: 'REFUNDED',
+              settledAt: cancelledAt,
+            },
+          });
+
+          refunded++;
+        }
+
+        await tx.event.update({
+          where: { id: eventId },
+          data: {
+            status: 'CANCELLED',
+            settledBy: cancelledBy,
+            settledAt: cancelledAt,
+          },
+        });
+
+        return { refunded };
+      },
+      {
+        timeout: 30000,
       }
-
-      // Update event
-      await tx.event.update({
-        where: { id: eventId },
-        data: {
-          status: 'CANCELLED',
-          settledBy: cancelledBy,
-          settledAt: new Date(),
-        },
-      });
-
-      return { refunded };
-    });
-
-    return result;
+    );
   },
 
   /**

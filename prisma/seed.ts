@@ -106,6 +106,7 @@ async function main() {
 
   const events = [
     {
+      id: 'seed-event-premier-league',
       title: 'Premier League: Manchester United vs Liverpool',
       description: 'Big match at Old Trafford',
       startsAt: tomorrow,
@@ -115,6 +116,7 @@ async function main() {
       createdBy: admin.id,
     },
     {
+      id: 'seed-event-nba-finals-g7',
       title: 'NBA Finals Game 7',
       description: 'The deciding game of the championship',
       startsAt: nextWeek,
@@ -124,6 +126,7 @@ async function main() {
       createdBy: admin.id,
     },
     {
+      id: 'seed-event-tennis-final',
       title: 'Tennis Grand Slam Final',
       description: 'Championship match',
       startsAt: new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000),
@@ -135,8 +138,10 @@ async function main() {
   ];
 
   for (const eventData of events) {
-    const event = await prisma.event.create({
-      data: eventData,
+    const event = await prisma.event.upsert({
+      where: { id: eventData.id },
+      update: {},
+      create: eventData,
     });
     console.log('✅ Event created:', event.title);
   }
@@ -144,6 +149,7 @@ async function main() {
   // Create sample rewards
   const rewards = [
     {
+      id: 'seed-reward-amazon-10',
       name: '$10 Amazon Gift Card',
       description: 'Digital gift card delivered via email',
       pointsCost: 5000,
@@ -151,6 +157,7 @@ async function main() {
       isActive: true,
     },
     {
+      id: 'seed-reward-amazon-25',
       name: '$25 Amazon Gift Card',
       description: 'Digital gift card delivered via email',
       pointsCost: 12000,
@@ -158,6 +165,7 @@ async function main() {
       isActive: true,
     },
     {
+      id: 'seed-reward-amazon-50',
       name: '$50 Amazon Gift Card',
       description: 'Digital gift card delivered via email',
       pointsCost: 22000,
@@ -165,6 +173,7 @@ async function main() {
       isActive: true,
     },
     {
+      id: 'seed-reward-shirt',
       name: 'Platform T-Shirt',
       description: 'Exclusive branded merchandise',
       pointsCost: 3000,
@@ -172,6 +181,7 @@ async function main() {
       isActive: true,
     },
     {
+      id: 'seed-reward-vip-1mo',
       name: 'VIP Status (1 Month)',
       description: 'Get VIP badge and early access to events',
       pointsCost: 8000,
@@ -181,8 +191,10 @@ async function main() {
   ];
 
   for (const rewardData of rewards) {
-    const reward = await prisma.reward.create({
-      data: rewardData,
+    const reward = await prisma.reward.upsert({
+      where: { id: rewardData.id },
+      update: {},
+      create: rewardData,
     });
     console.log('✅ Reward created:', reward.name);
   }
