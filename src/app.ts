@@ -16,6 +16,10 @@ const app = express();
 // Security Middleware
 // -----------------------------------------------------------------------------
 
+if (config.server.trustProxy !== undefined) {
+  app.set('trust proxy', config.server.trustProxy);
+}
+
 // Helmet sets various HTTP headers for security
 app.use(helmet());
 

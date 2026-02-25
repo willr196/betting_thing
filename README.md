@@ -58,6 +58,50 @@ npm run dev
 
 ---
 
+## Production Deployment (Docker)
+
+`ngrok` is for temporary tunnel access during development/testing. It is not required for production.
+
+### 1. Prepare production env file
+
+```bash
+cp .env.production.example .env.production
+# Edit all placeholder values before launch
+```
+
+At minimum, set strong values for:
+- `POSTGRES_PASSWORD`
+- `DATABASE_URL`
+- `JWT_SECRET`
+- `FRONTEND_URL`
+- `THE_ODDS_API_KEY`
+
+### 2. Launch production stack
+
+```bash
+npm run docker:prod:up
+```
+
+This starts:
+- PostgreSQL (internal container network)
+- API (`NODE_ENV=production`, compiled TypeScript, migration on startup)
+- Frontend (static files served by nginx, with `/api` proxied to API)
+
+### 3. Verify health
+
+```bash
+curl -f http://localhost/api/health/live
+curl -f http://localhost/health
+```
+
+### 4. Stop stack
+
+```bash
+npm run docker:prod:down
+```
+
+---
+
 ## API Reference
 
 Base URL: `http://localhost:3000/api`

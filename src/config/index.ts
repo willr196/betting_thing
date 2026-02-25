@@ -10,6 +10,26 @@ dotenv.config();
 // Define and validate all environment variables at startup.
 // App will fail fast if required variables are missing.
 
+const trustProxySchema = z.preprocess((value) => {
+  if (value === undefined || value === null || value === '') {
+    return undefined;
+  }
+
+  if (value === true || value === 'true') {
+    return true;
+  }
+
+  if (value === false || value === 'false') {
+    return false;
+  }
+
+  if (typeof value === 'string' && /^\d+$/.test(value)) {
+    return Number(value);
+  }
+
+  return value;
+}, z.union([z.boolean(), z.number().int().min(0)]).optional());
+
 const envSchema = z.object({
   // Database
   DATABASE_URL: z.string().url(),
@@ -23,6 +43,7 @@ const envSchema = z.object({
   PORT: z.coerce.number().default(3000),
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
   FRONTEND_URL: z.string().url().optional(),
+  TRUST_PROXY: trustProxySchema,
   
   // Token Economy
   SIGNUP_BONUS_TOKENS: z.coerce.number().min(0).default(0),
@@ -55,6 +76,11 @@ if (!parseResult.success) {
 
 const env = parseResult.data;
 
+if (env.NODE_ENV === 'production' && !env.FRONTEND_URL) {
+  console.error('❌ FRONTEND_URL is required when NODE_ENV=production');
+  process.exit(1);
+}
+
 // =============================================================================
 // CONFIGURATION OBJECT
 // =============================================================================
@@ -71,6 +97,7 @@ export const config = {
   server: {
     port: env.PORT,
     frontendUrl: env.FRONTEND_URL,
+    trustProxy: env.TRUST_PROXY,
   },
   
   // Database

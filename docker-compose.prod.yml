@@ -1,0 +1,74 @@
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER in .env.production}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env.production}
+      POSTGRES_DB: ${POSTGRES_DB:?set POSTGRES_DB in .env.production}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api.prod
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      TRUST_PROXY: ${TRUST_PROXY:-1}
+      DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL in .env.production}
+      FRONTEND_URL: ${FRONTEND_URL:?set FRONTEND_URL in .env.production}
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env.production}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-7d}
+      BCRYPT_SALT_ROUNDS: ${BCRYPT_SALT_ROUNDS:-12}
+      SIGNUP_BONUS_TOKENS: ${SIGNUP_BONUS_TOKENS:-5}
+      DAILY_ALLOWANCE_TOKENS: ${DAILY_ALLOWANCE_TOKENS:-5}
+      MAX_ALLOWANCE_TOKENS: ${MAX_ALLOWANCE_TOKENS:-35}
+      MIN_STAKE_AMOUNT: ${MIN_STAKE_AMOUNT:-1}
+      MAX_STAKE_AMOUNT: ${MAX_STAKE_AMOUNT:-35}
+      RATE_LIMIT_MAX: ${RATE_LIMIT_MAX:-100}
+      RATE_LIMIT_WINDOW_MINUTES: ${RATE_LIMIT_WINDOW_MINUTES:-15}
+      THE_ODDS_API_KEY: ${THE_ODDS_API_KEY:?set THE_ODDS_API_KEY in .env.production}
+      THE_ODDS_API_BASE_URL: ${THE_ODDS_API_BASE_URL:-https://api.the-odds-api.com/v4}
+      THE_ODDS_API_REGIONS: ${THE_ODDS_API_REGIONS:-uk}
+      THE_ODDS_API_MARKETS: ${THE_ODDS_API_MARKETS:-h2h}
+      ODDS_SYNC_INTERVAL_SECONDS: ${ODDS_SYNC_INTERVAL_SECONDS:-300}
+      SETTLEMENT_INTERVAL_SECONDS: ${SETTLEMENT_INTERVAL_SECONDS:-300}
+    expose:
+      - "3000"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/api/health/live >/dev/null || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend.prod
+      args:
+        VITE_API_URL: ${VITE_API_URL:-/api}
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "${FRONTEND_PORT:-80}:80"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost/health >/dev/null || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:
