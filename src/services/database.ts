@@ -1,5 +1,6 @@
 import { PrismaClient } from '@prisma/client';
 import { config } from '../config/index.js';
+import { logger } from '../logger.js';
 
 // =============================================================================
 // PRISMA CLIENT SINGLETON
@@ -33,16 +34,16 @@ if (config.isDev) {
 export async function connectDatabase(): Promise<void> {
   try {
     await prisma.$connect();
-    console.log('✅ Database connected');
+    logger.info('Database connected');
   } catch (error) {
-    console.error('❌ Database connection failed:', error);
+    logger.error({ err: error }, 'Database connection failed');
     process.exit(1);
   }
 }
 
 export async function disconnectDatabase(): Promise<void> {
   await prisma.$disconnect();
-  console.log('📴 Database disconnected');
+  logger.info('Database disconnected');
 }
 
 // =============================================================================

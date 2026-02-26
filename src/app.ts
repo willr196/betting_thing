@@ -1,10 +1,13 @@
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
+import cookieParser from 'cookie-parser';
 import rateLimit from 'express-rate-limit';
+import { randomUUID } from 'crypto';
 import { config } from './config/index.js';
 import routes from './routes/index.js';
 import { errorHandler, notFoundHandler } from './middleware/index.js';
+import { logger } from './logger.js';
 
 // =============================================================================
 // EXPRESS APP CONFIGURATION
@@ -55,22 +58,29 @@ const limiter = rateLimit({
 app.use(limiter);
 
 // -----------------------------------------------------------------------------
-// Body Parsing
+// Body Parsing & Cookies
 // -----------------------------------------------------------------------------
 
 app.use(express.json({ limit: '10kb' }));
 app.use(express.urlencoded({ extended: true, limit: '10kb' }));
+app.use(cookieParser());
 
 // -----------------------------------------------------------------------------
-// Request Logging (Development)
+// Request Correlation ID + Logging
 // -----------------------------------------------------------------------------
 
-if (config.isDev) {
-  app.use((req, _res, next) => {
-    console.log(`${new Date().toISOString()} ${req.method} ${req.path}`);
-    next();
-  });
-}
+app.use((req, res, next) => {
+  const requestId = (req.headers['x-request-id'] as string) ?? randomUUID();
+  res.setHeader('x-request-id', requestId);
+  (req as express.Request & { requestId: string }).requestId = requestId;
+
+  logger.info(
+    { requestId, method: req.method, path: req.path },
+    'Incoming request'
+  );
+
+  next();
+});
 
 // -----------------------------------------------------------------------------
 // API Routes

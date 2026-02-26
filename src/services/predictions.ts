@@ -423,7 +423,7 @@ export const PredictionService = {
   },
 };
 
-function calculateCashoutValue(
+export function calculateCashoutValue(
   originalStakeTokens: number,
   originalOdds: number,
   currentOdds: number,

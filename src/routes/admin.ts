@@ -6,6 +6,7 @@ import { LedgerService } from '../services/ledger.js';
 import { prisma } from '../services/database.js';
 import { SettlementWorker } from '../services/settlementWorker.js';
 import { OddsSyncService } from '../services/oddsSync.js';
+import { AuditLogService } from '../services/auditLog.js';
 import { requireAuth, requireAdmin, validateBody, validateParams, getAuthUser, idParamSchema, positiveIntSchema, futureDateSchema } from '../middleware/index.js';
 import { asyncHandler, parseLimitOffset, sendSuccess } from '../utils/index.js';
 
@@ -93,6 +94,14 @@ router.post(
       externalSportKey,
     });
 
+    await AuditLogService.log({
+      adminId: userId,
+      action: 'CREATE_EVENT',
+      targetType: 'EVENT',
+      targetId: event.id,
+      details: { title, startsAt, outcomes, payoutMultiplier },
+    });
+
     sendSuccess(res, { event }, 201);
   })
 );
@@ -105,7 +114,16 @@ router.post(
   '/events/:id/lock',
   validateParams(idParamSchema),
   asyncHandler(async (req, res) => {
+    const { userId } = getAuthUser(req);
     const event = await EventService.lock(req.params.id as string);
+
+    await AuditLogService.log({
+      adminId: userId,
+      action: 'LOCK_EVENT',
+      targetType: 'EVENT',
+      targetId: event.id,
+    });
+
     sendSuccess(res, { event });
   })
 );
@@ -128,6 +146,14 @@ router.post(
       userId
     );
 
+    await AuditLogService.log({
+      adminId: userId,
+      action: 'SETTLE_EVENT',
+      targetType: 'EVENT',
+      targetId: req.params.id as string,
+      details: { finalOutcome, winners: result.winners, losers: result.losers, totalPayout: result.totalPayout },
+    });
+
     sendSuccess(res, { settlement: result });
   })
 );
@@ -142,6 +168,15 @@ router.post(
   asyncHandler(async (req, res) => {
     const { userId } = getAuthUser(req);
     const result = await EventService.cancel(req.params.id as string, userId);
+
+    await AuditLogService.log({
+      adminId: userId,
+      action: 'CANCEL_EVENT',
+      targetType: 'EVENT',
+      targetId: req.params.id as string,
+      details: { refunded: result.refunded },
+    });
+
     sendSuccess(res, { cancellation: result });
   })
 );
@@ -182,7 +217,17 @@ router.post(
   '/rewards',
   validateBody(createRewardSchema),
   asyncHandler(async (req, res) => {
+    const { userId } = getAuthUser(req);
     const reward = await RewardsService.createReward(req.body);
+
+    await AuditLogService.log({
+      adminId: userId,
+      action: 'CREATE_REWARD',
+      targetType: 'REWARD',
+      targetId: reward.id,
+      details: { name: reward.name, pointsCost: reward.pointsCost },
+    });
+
     sendSuccess(res, { reward }, 201);
   })
 );
@@ -196,7 +241,17 @@ router.patch(
   validateParams(idParamSchema),
   validateBody(updateRewardSchema),
   asyncHandler(async (req, res) => {
+    const { userId } = getAuthUser(req);
     const reward = await RewardsService.updateReward(req.params.id as string, req.body);
+
+    await AuditLogService.log({
+      adminId: userId,
+      action: 'UPDATE_REWARD',
+      targetType: 'REWARD',
+      targetId: reward.id,
+      details: req.body as Record<string, unknown>,
+    });
+
     sendSuccess(res, { reward });
   })
 );
@@ -269,6 +324,14 @@ router.post(
       fulfilmentNote
     );
 
+    await AuditLogService.log({
+      adminId: userId,
+      action: 'FULFIL_REDEMPTION',
+      targetType: 'REDEMPTION',
+      targetId: redemption.id,
+      details: { fulfilmentNote, userId: redemption.userId, rewardId: redemption.rewardId },
+    });
+
     sendSuccess(res, { redemption });
   })
 );
@@ -283,6 +346,15 @@ router.post(
   asyncHandler(async (req, res) => {
     const { userId } = getAuthUser(req);
     const redemption = await RewardsService.cancel(req.params.id as string, userId);
+
+    await AuditLogService.log({
+      adminId: userId,
+      action: 'CANCEL_REDEMPTION',
+      targetType: 'REDEMPTION',
+      targetId: redemption.id,
+      details: { userId: redemption.userId, rewardId: redemption.rewardId },
+    });
+
     sendSuccess(res, { redemption });
   })
 );
@@ -348,7 +420,17 @@ router.post(
   '/users/:id/balance/repair',
   validateParams(idParamSchema),
   asyncHandler(async (req, res) => {
+    const { userId: adminId } = getAuthUser(req);
     const check = await LedgerService.repairBalance(req.params.id as string);
+
+    await AuditLogService.log({
+      adminId,
+      action: 'REPAIR_BALANCE',
+      targetType: 'USER',
+      targetId: req.params.id as string,
+      details: { before: check.cachedBalance, calculated: check.calculatedBalance },
+    });
+
     sendSuccess(res, { balance: check });
   })
 );
@@ -361,6 +443,7 @@ router.post(
   '/tokens/credit',
   validateBody(adminCreditSchema),
   asyncHandler(async (req, res) => {
+    const { userId: adminId } = getAuthUser(req);
     const { userId, amount, description } = req.body;
 
     const result = await LedgerService.credit({
@@ -368,6 +451,14 @@ router.post(
       amount,
       type: 'ADMIN_CREDIT',
       description: description ?? 'Admin credit',
+    });
+
+    await AuditLogService.log({
+      adminId,
+      action: 'CREDIT_TOKENS',
+      targetType: 'USER',
+      targetId: userId as string,
+      details: { amount, description },
     });
 
     sendSuccess(res, result, 201);
@@ -467,6 +558,35 @@ router.get(
   '/settlement/status',
   asyncHandler(async (_req, res) => {
     sendSuccess(res, { status: SettlementWorker.getStatus() });
+  })
+);
+
+// =============================================================================
+// AUDIT LOG
+// =============================================================================
+
+/**
+ * GET /admin/audit-log
+ * List admin audit log entries.
+ */
+router.get(
+  '/audit-log',
+  asyncHandler(async (req, res) => {
+    const { limit, offset } = parseLimitOffset(req.query as Record<string, unknown>, {
+      defaultLimit: 50,
+      maxLimit: 100,
+    });
+
+    const [entries, total] = await Promise.all([
+      prisma.adminAuditLog.findMany({
+        orderBy: { createdAt: 'desc' },
+        take: limit,
+        skip: offset,
+      }),
+      prisma.adminAuditLog.count(),
+    ]);
+
+    sendSuccess(res, { entries, total });
   })
 );
 

@@ -177,23 +177,41 @@ export const EventService = {
           );
         }
 
-        // Fetch PENDING predictions inside the transaction to avoid stale reads.
-        const predictions = await tx.prediction.findMany({
-          where: {
-            eventId,
-            status: 'PENDING',
-          },
-        });
+        // Lock all PENDING predictions for this event with FOR UPDATE.
+        // This prevents double-settlement if two transactions somehow run concurrently
+        // (belt-and-suspenders alongside the event-level lock above).
+        const predictions = await tx.$queryRaw<
+          Array<{
+            id: string;
+            userId: string;
+            predictedOutcome: string;
+            stakeAmount: number;
+            originalOdds: Prisma.Decimal | null;
+            status: string;
+          }>
+        >`SELECT "id", "userId", "predictedOutcome", "stakeAmount", "originalOdds", "status"
+          FROM "Prediction"
+          WHERE "eventId" = ${eventId} AND "status" = 'PENDING'
+          FOR UPDATE`;
 
         let winners = 0;
         let losers = 0;
         let totalPayout = 0;
 
         for (const prediction of predictions) {
+          // Idempotency guard: skip if already settled (stale read protection)
+          if (prediction.status !== 'PENDING') continue;
+
           const isWinner = prediction.predictedOutcome === finalOutcome;
 
           if (isWinner) {
-            const odds = prediction.originalOdds?.toNumber() ?? lockedEvent.payoutMultiplier;
+            const rawOdds = prediction.originalOdds;
+            const odds =
+              rawOdds != null
+                ? (typeof rawOdds === 'object' && 'toNumber' in rawOdds
+                    ? (rawOdds as Prisma.Decimal).toNumber()
+                    : Number(rawOdds))
+                : lockedEvent.payoutMultiplier;
             const payout = calculatePayout(prediction.stakeAmount, odds);
 
             await PointsLedgerService.credit(
@@ -363,6 +381,6 @@ export const EventService = {
   },
 };
 
-function calculatePayout(stakeAmount: number, odds: number): number {
+export function calculatePayout(stakeAmount: number, odds: number): number {
   return Math.floor(stakeAmount * odds);
 }

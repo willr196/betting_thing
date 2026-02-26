@@ -1,5 +1,6 @@
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
+import { randomBytes, createHash } from 'crypto';
 import { config } from '../config/index.js';
 import { prisma } from './database.js';
 import { LedgerService } from './ledger.js';
@@ -19,7 +20,7 @@ export const AuthService = {
   async register(
     email: string,
     password: string
-  ): Promise<{ user: SafeUser; token: string }> {
+  ): Promise<{ user: SafeUser; token: string; refreshToken: string }> {
     // Check if user already exists
     const existingUser = await prisma.user.findUnique({
       where: { email: email.toLowerCase() },
@@ -60,23 +61,25 @@ export const AuthService = {
       });
     });
 
-    // Generate JWT
+    // Generate tokens
     const token = this.generateToken(user);
+    const refreshToken = await this.createRefreshToken(user.id);
 
     return {
-      user: omit(user, ['passwordHash']),
+      user: omit(user, ['passwordHash', 'refreshTokenHash', 'refreshTokenExpiresAt']),
       token,
+      refreshToken,
     };
   },
 
   /**
    * Authenticate a user with email and password.
-   * Returns user and JWT on success.
+   * Returns user, access token, and refresh token on success.
    */
   async login(
     email: string,
     password: string
-  ): Promise<{ user: SafeUser; token: string }> {
+  ): Promise<{ user: SafeUser; token: string; refreshToken: string }> {
     // Find user by email
     const user = await prisma.user.findUnique({
       where: { email: email.toLowerCase() },
@@ -93,28 +96,99 @@ export const AuthService = {
       throw new AppError('INVALID_CREDENTIALS', 'Invalid email or password', 401);
     }
 
-    // Generate JWT
+    // Generate tokens
     const token = this.generateToken(user);
+    const refreshToken = await this.createRefreshToken(user.id);
 
     return {
-      user: omit(user, ['passwordHash']),
+      user: omit(user, ['passwordHash', 'refreshTokenHash', 'refreshTokenExpiresAt']),
       token,
+      refreshToken,
     };
   },
 
   /**
-   * Generate a JWT for a user.
+   * Generate a JWT access token for a user.
    */
-  generateToken(user: { id: string; email: string; isAdmin: boolean }): string {
+  generateToken(user: { id: string; email: string; isAdmin: boolean; tokenVersion: number }): string {
     const payload: Omit<JwtPayload, 'iat' | 'exp'> = {
       userId: user.id,
       email: user.email,
       isAdmin: user.isAdmin,
+      tokenVersion: user.tokenVersion,
     };
 
     return jwt.sign(payload, config.auth.jwtSecret, {
       expiresIn: config.auth.jwtExpiresIn as string,
     } as jwt.SignOptions);
+  },
+
+  /**
+   * Create and store a new refresh token for a user.
+   * Returns the raw (unhashed) token to send to the client.
+   */
+  async createRefreshToken(userId: string): Promise<string> {
+    const raw = randomBytes(32).toString('hex');
+    const hash = createHash('sha256').update(raw).digest('hex');
+    const expiresAt = new Date();
+    expiresAt.setDate(expiresAt.getDate() + config.auth.refreshTokenExpiresDays);
+
+    await prisma.user.update({
+      where: { id: userId },
+      data: {
+        refreshTokenHash: hash,
+        refreshTokenExpiresAt: expiresAt,
+      },
+    });
+
+    return raw;
+  },
+
+  /**
+   * Exchange a refresh token for a new access token.
+   * Returns the new access token (and rotates the refresh token).
+   */
+  async refreshAccessToken(
+    rawToken: string
+  ): Promise<{ token: string; refreshToken: string; user: SafeUser }> {
+    const hash = createHash('sha256').update(rawToken).digest('hex');
+
+    const user = await prisma.user.findUnique({
+      where: { refreshTokenHash: hash },
+    });
+
+    if (!user || !user.refreshTokenExpiresAt) {
+      throw new AppError('TOKEN_INVALID', 'Invalid refresh token', 401);
+    }
+
+    if (user.refreshTokenExpiresAt < new Date()) {
+      // Clean up expired token
+      await prisma.user.update({
+        where: { id: user.id },
+        data: { refreshTokenHash: null, refreshTokenExpiresAt: null },
+      });
+      throw new AppError('TOKEN_EXPIRED', 'Refresh token has expired', 401);
+    }
+
+    // Issue new access token and rotate refresh token
+    const token = this.generateToken(user);
+    const newRefreshToken = await this.createRefreshToken(user.id);
+
+    return {
+      token,
+      refreshToken: newRefreshToken,
+      user: omit(user, ['passwordHash', 'refreshTokenHash', 'refreshTokenExpiresAt']),
+    };
+  },
+
+  /**
+   * Revoke a user's refresh token (logout).
+   */
+  async revokeRefreshToken(userId: string): Promise<void> {
+    await prisma.user.update({
+      where: { id: userId },
+      data: { refreshTokenHash: null, refreshTokenExpiresAt: null },
+    });
   },
 
   /**
@@ -136,7 +210,7 @@ export const AuthService = {
   },
 
   /**
-   * Get a user by ID (without password hash).
+   * Get a user by ID (without sensitive fields).
    */
   async getUserById(userId: string): Promise<SafeUser | null> {
     const user = await prisma.user.findUnique({
@@ -147,7 +221,7 @@ export const AuthService = {
       return null;
     }
 
-    return omit(user, ['passwordHash']);
+    return omit(user, ['passwordHash', 'refreshTokenHash', 'refreshTokenExpiresAt']);
   },
 
   /**
@@ -173,12 +247,18 @@ export const AuthService = {
       throw new AppError('INVALID_CREDENTIALS', 'Current password is incorrect', 401);
     }
 
-    // Hash and save new password
+    // Hash and save new password; increment tokenVersion to invalidate existing JWTs
     const passwordHash = await bcrypt.hash(newPassword, config.auth.bcryptRounds);
 
     await prisma.user.update({
       where: { id: userId },
-      data: { passwordHash },
+      data: {
+        passwordHash,
+        tokenVersion: { increment: 1 },
+        // Revoke refresh token on password change
+        refreshTokenHash: null,
+        refreshTokenExpiresAt: null,
+      },
     });
   },
 

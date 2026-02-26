@@ -4,6 +4,7 @@ import { ZodError } from 'zod';
 import { config } from '../config/index.js';
 import { AppError, sendError } from '../utils/index.js';
 import { ErrorCodes } from '../types/index.js';
+import { logger } from '../logger.js';
 
 // =============================================================================
 // ERROR HANDLER MIDDLEWARE
@@ -19,10 +20,8 @@ export const errorHandler: ErrorRequestHandler = (
   res: Response,
   _next: NextFunction
 ): void => {
-  // Log error in development
-  if (config.isDev) {
-    console.error('Error:', error);
-  }
+  // Log all errors; include stack in dev
+  logger.error({ err: error }, 'Request error');
 
   // Handle our custom AppError
   if (error instanceof AppError) {

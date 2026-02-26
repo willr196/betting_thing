@@ -3,6 +3,7 @@ import { config } from './config/index.js';
 import { connectDatabase, disconnectDatabase } from './services/database.js';
 import { OddsSyncService } from './services/oddsSync.js';
 import { SettlementWorker } from './services/settlementWorker.js';
+import { logger } from './logger.js';
 
 // =============================================================================
 // SERVER STARTUP
@@ -15,17 +16,10 @@ async function start(): Promise<void> {
 
     // Start HTTP server
     const server = app.listen(config.server.port, () => {
-      console.log(`
-╔═══════════════════════════════════════════════════════════╗
-║                                                           ║
-║   🎯 Prediction Platform API                              ║
-║                                                           ║
-║   Server:  http://localhost:${config.server.port}                       ║
-║   Health:  http://localhost:${config.server.port}/api/health            ║
-║   Mode:    ${config.isDev ? 'Development' : 'Production'}                                 ║
-║                                                           ║
-╚═══════════════════════════════════════════════════════════╝
-      `);
+      logger.info(
+        { port: config.server.port, mode: config.isDev ? 'development' : 'production' },
+        'Prediction Platform API started'
+      );
     });
 
     let oddsSyncInterval: ReturnType<typeof setInterval> | undefined;
@@ -36,7 +30,7 @@ async function start(): Promise<void> {
         try {
           await OddsSyncService.runOnce();
         } catch (error) {
-          console.error('Odds sync failed:', error);
+          logger.error({ err: error }, 'Odds sync failed');
         }
       }, config.oddsApi.syncIntervalSeconds * 1000);
 
@@ -44,30 +38,30 @@ async function start(): Promise<void> {
         try {
           await SettlementWorker.runOnce();
         } catch (error) {
-          console.error('Settlement worker failed:', error);
+          logger.error({ err: error }, 'Settlement worker failed');
         }
       }, config.oddsApi.settlementIntervalSeconds * 1000);
     }
 
     // Graceful shutdown handling
     const shutdown = async (signal: string) => {
-      console.log(`\n${signal} received. Starting graceful shutdown...`);
+      logger.info({ signal }, 'Received signal, starting graceful shutdown');
 
       if (oddsSyncInterval) clearInterval(oddsSyncInterval);
       if (settlementInterval) clearInterval(settlementInterval);
 
       server.close(async () => {
-        console.log('HTTP server closed');
+        logger.info('HTTP server closed');
 
         await disconnectDatabase();
-        
-        console.log('Shutdown complete');
+
+        logger.info('Shutdown complete');
         process.exit(0);
       });
 
       // Force exit after 10 seconds
       setTimeout(() => {
-        console.error('Could not close connections in time, forcefully shutting down');
+        logger.error('Could not close connections in time, forcefully shutting down');
         process.exit(1);
       }, 10000);
     };
@@ -76,19 +70,19 @@ async function start(): Promise<void> {
     process.on('SIGINT', () => shutdown('SIGINT'));
 
   } catch (error) {
-    console.error('Failed to start server:', error);
+    logger.error({ err: error }, 'Failed to start server');
     process.exit(1);
   }
 }
 
 // Handle unhandled promise rejections
 process.on('unhandledRejection', (reason, promise) => {
-  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+  logger.error({ reason, promise }, 'Unhandled promise rejection');
 });
 
 // Handle uncaught exceptions
 process.on('uncaughtException', (error) => {
-  console.error('Uncaught Exception:', error);
+  logger.error({ err: error }, 'Uncaught exception');
   process.exit(1);
 });
 

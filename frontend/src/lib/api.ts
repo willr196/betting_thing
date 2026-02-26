@@ -37,6 +37,7 @@ function getDefaultStorage(): StorageLike | null {
 class ApiClient {
   private token: string | null = null;
   private storage: StorageLike | null;
+  private isRefreshing = false;
 
   constructor(storage: StorageLike | null = getDefaultStorage()) {
     this.storage = storage;
@@ -64,7 +65,8 @@ class ApiClient {
 
   private async request<T>(
     endpoint: string,
-    options: RequestInit = {}
+    options: RequestInit = {},
+    retryOnExpiry = true
   ): Promise<T> {
     const headers: HeadersInit = {
       'Content-Type': 'application/json',
@@ -81,6 +83,7 @@ class ApiClient {
       response = await fetch(`${API_BASE}${endpoint}`, {
         ...options,
         headers,
+        credentials: 'include', // Always include cookies for refresh token
       });
     } catch {
       throw new ApiError(
@@ -90,7 +93,34 @@ class ApiClient {
       );
     }
 
-    // Handle 401 globally — clear token and signal auth failure
+    // On 401 TOKEN_EXPIRED, try to refresh the access token once
+    if (response.status === 401 && retryOnExpiry && !this.isRefreshing) {
+      let data: ApiResponse<T>;
+      try {
+        data = await response.json();
+      } catch {
+        throw new ApiError('Session expired. Please log in again.', 'UNAUTHORIZED', 401);
+      }
+
+      if (data.error?.code === 'TOKEN_EXPIRED') {
+        try {
+          const refreshed = await this.refresh();
+          this.setToken(refreshed.token);
+          // Retry the original request with the new token
+          return this.request<T>(endpoint, options, false);
+        } catch {
+          // Refresh failed — clear token and signal auth failure
+          this.setToken(null);
+          throw new ApiError('Session expired. Please log in again.', 'UNAUTHORIZED', 401);
+        }
+      }
+
+      // 401 for other reasons — clear token
+      this.setToken(null);
+      throw new ApiError('Session expired. Please log in again.', 'UNAUTHORIZED', 401);
+    }
+
+    // Handle non-401 error responses
     if (response.status === 401) {
       this.setToken(null);
       throw new ApiError('Session expired. Please log in again.', 'UNAUTHORIZED', 401);
@@ -140,6 +170,35 @@ class ApiClient {
     return data;
   }
 
+  /**
+   * Attempt to get a new access token using the HTTP-only refresh token cookie.
+   * Used on page load when localStorage token is absent/expired.
+   */
+  async refresh(): Promise<{ token: string; user: User }> {
+    this.isRefreshing = true;
+    try {
+      const data = await this.request<{ token: string; user: User }>(
+        '/auth/refresh',
+        { method: 'POST' },
+        false // Don't retry on failure
+      );
+      this.setToken(data.token);
+      return data;
+    } finally {
+      this.isRefreshing = false;
+    }
+  }
+
+  async logout(): Promise<void> {
+    try {
+      await this.request('/auth/logout', { method: 'POST' }, false);
+    } catch {
+      // Ignore errors during logout
+    } finally {
+      this.setToken(null);
+    }
+  }
+
   async getMe(): Promise<{ user: User }> {
     return this.request<{ user: User }>('/auth/me');
   }
@@ -169,10 +228,6 @@ class ApiClient {
 
   async getPointsBalance(): Promise<{ balance: number; verified: boolean }> {
     return this.request<{ balance: number; verified: boolean }>('/points/balance');
-  }
-
-  logout() {
-    this.setToken(null);
   }
 
   // ===========================================================================
@@ -287,7 +342,7 @@ class ApiClient {
     if (params?.status) searchParams.set('status', params.status);
     if (params?.limit) searchParams.set('limit', params.limit.toString());
     if (params?.offset) searchParams.set('offset', params.offset.toString());
-    
+
     const query = searchParams.toString();
     return this.request<{ redemptions: Redemption[]; total: number }>(
       `/rewards/redemptions${query ? `?${query}` : ''}`

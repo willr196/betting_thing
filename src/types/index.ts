@@ -28,6 +28,7 @@ export interface JwtPayload {
   userId: string;
   email: string;
   isAdmin: boolean;
+  tokenVersion: number;
   iat?: number;
   exp?: number;
 }
@@ -45,8 +46,8 @@ export function isAuthenticated(req: Request): req is AuthenticatedRequest {
 // USER TYPES
 // =============================================================================
 
-// Safe user object without password hash
-export type SafeUser = Omit<User, 'passwordHash'>;
+// Safe user object without password hash, internal version, and refresh token fields
+export type SafeUser = Omit<User, 'passwordHash' | 'tokenVersion' | 'refreshTokenHash' | 'refreshTokenExpiresAt'>;
 
 export interface UserWithBalance extends SafeUser {
   tokenBalance: number;

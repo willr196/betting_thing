@@ -1,0 +1,27 @@
+# Caddyfile — automatic HTTPS via Let's Encrypt
+# Set DOMAIN in .env.production (e.g. DOMAIN=predict.example.com)
+#
+# Caddy automatically:
+#   - Obtains and renews TLS certificates from Let's Encrypt
+#   - Redirects HTTP → HTTPS
+#   - Sets HSTS headers
+
+{$DOMAIN} {
+    # Route API requests to the Express backend
+    handle /api/* {
+        reverse_proxy api:3000
+    }
+
+    # Route everything else to the nginx frontend
+    handle {
+        reverse_proxy frontend:80
+    }
+
+    # Security headers
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+        X-Content-Type-Options "nosniff"
+        X-Frame-Options "DENY"
+        Referrer-Policy "strict-origin-when-cross-origin"
+    }
+}

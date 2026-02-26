@@ -33,10 +33,17 @@ model User {
   
   isAdmin       Boolean  @default(false)
   isVerified    Boolean  @default(false)
-  
+
+  // Increment to revoke all existing tokens (e.g. on password change or compromise)
+  tokenVersion  Int      @default(1)
+
+  // Refresh token (hashed) for persistent sessions via HTTP-only cookie
+  refreshTokenHash      String?   @unique
+  refreshTokenExpiresAt DateTime?
+
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
-  
+
   // Relations
   predictions       Prediction[]
   tokenTransactions TokenTransaction[]
@@ -269,6 +276,26 @@ enum PredictionStatus {
   LOST      // Prediction was incorrect
   REFUNDED  // Event was cancelled, stake returned
   CASHED_OUT // User cashed out early
+}
+
+// =============================================================================
+// ADMIN AUDIT LOG
+// =============================================================================
+// Append-only log of all admin actions for compliance and dispute resolution.
+
+model AdminAuditLog {
+  id         String   @id @default(cuid())
+  adminId    String
+  action     String   // e.g. SETTLE_EVENT, CANCEL_EVENT, CREDIT_TOKENS, FULFIL_REDEMPTION
+  targetType String?  // e.g. EVENT, USER, REDEMPTION
+  targetId   String?
+  details    Json?    // Contextual info (amounts, outcomes, notes)
+  createdAt  DateTime @default(now())
+
+  @@index([adminId])
+  @@index([action])
+  @@index([createdAt])
+  @@index([targetType, targetId])
 }
 
 // =============================================================================

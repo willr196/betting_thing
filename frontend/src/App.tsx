@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { Layout } from './components/Layout';
 import { Spinner } from './components/ui';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import {
   LoginPage,
   RegisterPage,
@@ -72,7 +73,7 @@ function AppRoutes() {
           </PublicRoute>
         }
       >
-        <Route index element={<LoginPage />} />
+        <Route index element={<ErrorBoundary><LoginPage /></ErrorBoundary>} />
       </Route>
 
       <Route
@@ -83,7 +84,7 @@ function AppRoutes() {
           </PublicRoute>
         }
       >
-        <Route index element={<RegisterPage />} />
+        <Route index element={<ErrorBoundary><RegisterPage /></ErrorBoundary>} />
       </Route>
 
       {/* Protected routes */}
@@ -96,11 +97,11 @@ function AppRoutes() {
         }
       >
         <Route index element={<Navigate to="/events" replace />} />
-        <Route path="events" element={<EventsPage />} />
-        <Route path="events/:id" element={<EventDetailPage />} />
-        <Route path="predictions" element={<PredictionsPage />} />
-        <Route path="rewards" element={<RewardsPage />} />
-        <Route path="wallet" element={<WalletPage />} />
+        <Route path="events" element={<ErrorBoundary><EventsPage /></ErrorBoundary>} />
+        <Route path="events/:id" element={<ErrorBoundary><EventDetailPage /></ErrorBoundary>} />
+        <Route path="predictions" element={<ErrorBoundary><PredictionsPage /></ErrorBoundary>} />
+        <Route path="rewards" element={<ErrorBoundary><RewardsPage /></ErrorBoundary>} />
+        <Route path="wallet" element={<ErrorBoundary><WalletPage /></ErrorBoundary>} />
       </Route>
 
       {/* Catch all */}
@@ -116,9 +117,11 @@ function AppRoutes() {
 export default function App() {
   return (
     <BrowserRouter>
-      <AuthProvider>
-        <AppRoutes />
-      </AuthProvider>
+      <ErrorBoundary>
+        <AuthProvider>
+          <AppRoutes />
+        </AuthProvider>
+      </ErrorBoundary>
     </BrowserRouter>
   );
 }

@@ -62,13 +62,32 @@ services:
     depends_on:
       api:
         condition: service_healthy
-    ports:
-      - "${FRONTEND_PORT:-80}:80"
+    # No direct port exposure — Caddy is the only public ingress
+    expose:
+      - "80"
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost/health >/dev/null || exit 1"]
       interval: 15s
       timeout: 5s
       retries: 5
 
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      - frontend
+      - api
+    ports:
+      - "80:80"    # HTTP — Caddy redirects to HTTPS automatically
+      - "443:443"  # HTTPS
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data      # Persists TLS certificates across restarts
+      - caddy_config:/config
+    environment:
+      DOMAIN: ${DOMAIN:?set DOMAIN in .env.production}
+
 volumes:
   postgres_data:
+  caddy_data:
+  caddy_config:

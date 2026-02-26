@@ -19,7 +19,7 @@ interface AuthContextType {
   isAuthenticated: boolean;
   login: (email: string, password: string) => Promise<void>;
   register: (email: string, password: string) => Promise<void>;
-  logout: () => void;
+  logout: () => Promise<void>;
   refreshUser: () => Promise<void>;
 }
 
@@ -37,21 +37,45 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  // Check for existing session on mount
+  // Restore session on mount:
+  // 1. If a stored access token exists, validate it via /auth/me.
+  // 2. If no token (or token is invalid/expired), try the refresh token cookie.
+  // 3. If both fail, user is unauthenticated.
   useEffect(() => {
-    const token = api.getToken();
-    if (token) {
-      api
-        .getMe()
-        .then((data) => setUser(data.user))
-        .catch(() => {
-          api.logout();
-          setUser(null);
-        })
-        .finally(() => setIsLoading(false));
-    } else {
-      setIsLoading(false);
+    async function restoreSession() {
+      const token = api.getToken();
+
+      if (token) {
+        try {
+          const data = await api.getMe();
+          setUser(data.user);
+          return;
+        } catch (error) {
+          // If expired, the request interceptor will already try to refresh.
+          // If it gets here, both the access token and refresh failed.
+          if (error instanceof ApiError && error.status === 401) {
+            api.setToken(null);
+            // Fall through to try the refresh cookie directly
+          } else {
+            setIsLoading(false);
+            return;
+          }
+        }
+      }
+
+      // No valid access token — attempt silent refresh via cookie
+      try {
+        const data = await api.refresh();
+        setUser(data.user);
+      } catch {
+        // No valid refresh token either — user needs to log in
+        setUser(null);
+      } finally {
+        setIsLoading(false);
+      }
     }
+
+    restoreSession();
   }, []);
 
   const login = useCallback(async (email: string, password: string) => {
@@ -64,8 +88,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(data.user);
   }, []);
 
-  const logout = useCallback(() => {
-    api.logout();
+  const logout = useCallback(async () => {
+    await api.logout();
     setUser(null);
   }, []);
 
@@ -75,7 +99,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setUser(data.user);
     } catch (error) {
       if (error instanceof ApiError && error.status === 401) {
-        logout();
+        await logout();
       }
     }
   }, [logout]);

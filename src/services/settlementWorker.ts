@@ -3,6 +3,7 @@ import { OddsApiService, type OddsScore } from './oddsApi.js';
 import { EventService } from './events.js';
 import { matchOutcomeByName, normalizeOutcome } from './outcomes.js';
 import { AppError } from '../utils/index.js';
+import { logger } from '../logger.js';
 
 type SettlementStatus = {
   lastRunAt?: Date;
@@ -31,15 +32,26 @@ function createInMemoryStatus<T extends object>(initial: T): StatusStore<T> {
   };
 }
 
+const SETTLEMENT_BATCH_SIZE = 100;
+
 export function createSettlementWorker(
   statusStore: StatusStore<SettlementStatus> = createInMemoryStatus<SettlementStatus>({})
 ) {
+  let isRunning = false;
+
   return {
     getStatus() {
       return statusStore.get();
     },
 
     async runOnce(): Promise<{ settledEvents: number; failedEvents: number }> {
+      // Prevent overlapping runs if the previous one is still in progress
+      if (isRunning) {
+        logger.debug('[Settlement] Previous run still in progress, skipping');
+        return { settledEvents: 0, failedEvents: 0 };
+      }
+      isRunning = true;
+
       try {
         const pendingEvents = await prisma.event.findMany({
           where: {
@@ -47,6 +59,8 @@ export function createSettlementWorker(
             externalSportKey: { not: null },
             externalEventId: { not: null },
           },
+          // Bound the batch size to avoid unbounded transactions and API load
+          take: SETTLEMENT_BATCH_SIZE,
         });
 
         const eventsBySport = new Map<string, typeof pendingEvents>();
@@ -69,7 +83,7 @@ export function createSettlementWorker(
             scores = await OddsApiService.getScores(sportKey);
           } catch (error) {
             const message = error instanceof Error ? error.message : 'Unknown error';
-            console.error(`[Settlement] Failed to fetch scores for ${sportKey}:`, message);
+            logger.error({ sportKey, err: error }, '[Settlement] Failed to fetch scores');
             for (const event of events) {
               errors.push({ eventId: event.id, error: `Score fetch failed: ${message}` });
               failedEvents++;
@@ -90,8 +104,9 @@ export function createSettlementWorker(
 
             const outcome = determineOutcome(event.outcomes, score);
             if (!outcome) {
-              console.warn(
-                `[Settlement] Could not determine outcome for event ${event.id} (${event.title})`
+              logger.warn(
+                { eventId: event.id, title: event.title },
+                '[Settlement] Could not determine outcome for event'
               );
               continue;
             }
@@ -99,20 +114,22 @@ export function createSettlementWorker(
             try {
               await EventService.settle(event.id, outcome, 'system');
               settledEvents++;
-              console.log(
-                `[Settlement] Settled event ${event.id} (${event.title}) -> ${outcome}`
+              logger.info(
+                { eventId: event.id, title: event.title, outcome },
+                '[Settlement] Event settled'
               );
             } catch (error) {
               // Idempotency: if event was already settled/cancelled, skip.
               if (error instanceof AppError && error.code === 'EVENT_ALREADY_SETTLED') {
-                console.log(
-                  `[Settlement] Event ${event.id} already settled/cancelled, skipping`
+                logger.debug(
+                  { eventId: event.id },
+                  '[Settlement] Event already settled/cancelled, skipping'
                 );
                 continue;
               }
 
               const message = error instanceof Error ? error.message : 'Unknown error';
-              console.error(`[Settlement] Failed to settle event ${event.id}:`, message);
+              logger.error({ eventId: event.id, err: error }, '[Settlement] Failed to settle event');
               errors.push({ eventId: event.id, error: message });
               failedEvents++;
             }
@@ -137,6 +154,8 @@ export function createSettlementWorker(
           errors: undefined,
         });
         throw error;
+      } finally {
+        isRunning = false;
       }
     },
   };
@@ -144,7 +163,7 @@ export function createSettlementWorker(
 
 export const SettlementWorker = createSettlementWorker();
 
-function determineOutcome(outcomes: string[], score: OddsScore): string | null {
+export function determineOutcome(outcomes: string[], score: OddsScore): string | null {
   if (!score.scores || score.scores.length < 2) {
     return null;
   }

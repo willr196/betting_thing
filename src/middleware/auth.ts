@@ -1,5 +1,6 @@
 import type { Request, Response, NextFunction } from 'express';
 import { AuthService } from '../services/auth.js';
+import { prisma } from '../services/database.js';
 import { AppError } from '../utils/index.js';
 import type { AuthenticatedRequest, JwtPayload } from '../types/index.js';
 
@@ -11,11 +12,11 @@ import type { AuthenticatedRequest, JwtPayload } from '../types/index.js';
  * Middleware to require authentication.
  * Extracts JWT from Authorization header, verifies it, and attaches user to request.
  */
-export function requireAuth(
+export async function requireAuth(
   req: Request,
   _res: Response,
   next: NextFunction
-): void {
+): Promise<void> {
   try {
     const authHeader = req.headers.authorization;
 
@@ -25,19 +26,29 @@ export function requireAuth(
 
     // Expect format: "Bearer <token>"
     const parts = authHeader.split(' ');
-    
+
     if (parts.length !== 2 || parts[0] !== 'Bearer') {
       throw AppError.unauthorized('Invalid authorization header format');
     }
 
     const token = parts[1];
-    
+
     if (!token) {
       throw AppError.unauthorized('No token provided');
     }
 
-    // Verify token and extract payload
+    // Verify token signature and expiry
     const payload = AuthService.verifyToken(token);
+
+    // Verify tokenVersion matches DB — allows instant revocation on password change
+    const user = await prisma.user.findUnique({
+      where: { id: payload.userId },
+      select: { tokenVersion: true },
+    });
+
+    if (!user || user.tokenVersion !== payload.tokenVersion) {
+      throw AppError.unauthorized('Token has been revoked');
+    }
 
     // Attach user to request
     (req as AuthenticatedRequest).user = payload;

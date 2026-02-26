@@ -1,6 +1,7 @@
 import { Prisma } from '@prisma/client';
 import { prisma } from './database.js';
 import { OddsApiService } from './oddsApi.js';
+import { logger } from '../logger.js';
 
 type SyncStatus = {
   lastRunAt?: Date;
@@ -30,12 +31,20 @@ function createInMemoryStatus<T extends object>(initial: T): StatusStore<T> {
 export function createOddsSyncService(
   statusStore: StatusStore<SyncStatus> = createInMemoryStatus<SyncStatus>({})
 ) {
+  let isRunning = false;
+
   return {
     getStatus() {
       return statusStore.get();
     },
 
     async runOnce(): Promise<{ updatedEvents: number }> {
+      if (isRunning) {
+        logger.debug('[OddsSync] Previous run still in progress, skipping');
+        return { updatedEvents: 0 };
+      }
+      isRunning = true;
+
       try {
         const activeSportKeys = await prisma.event.findMany({
           where: {
@@ -107,6 +116,8 @@ export function createOddsSyncService(
           updatedEvents: 0,
         });
         throw error;
+      } finally {
+        isRunning = false;
       }
     },
   };

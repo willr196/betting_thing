@@ -36,8 +36,9 @@ const envSchema = z.object({
   
   // Auth
   JWT_SECRET: z.string().min(32, 'JWT_SECRET must be at least 32 characters'),
-  JWT_EXPIRES_IN: z.string().default('7d'),
+  JWT_EXPIRES_IN: z.string().default('15m'),
   BCRYPT_SALT_ROUNDS: z.coerce.number().min(8).max(14).default(10),
+  REFRESH_TOKEN_EXPIRES_DAYS: z.coerce.number().min(1).max(90).default(30),
   
   // Application
   PORT: z.coerce.number().default(3000),
@@ -81,6 +82,22 @@ if (env.NODE_ENV === 'production' && !env.FRONTEND_URL) {
   process.exit(1);
 }
 
+const PLACEHOLDER_JWT_PATTERNS = [
+  'change-this', 'change_this', 'changeme', 'your-secret', 'your_secret',
+  'example', 'placeholder', 'secret', 'insecure',
+];
+
+if (env.NODE_ENV === 'production') {
+  const jwtLower = env.JWT_SECRET.toLowerCase();
+  if (PLACEHOLDER_JWT_PATTERNS.some((p) => jwtLower.includes(p))) {
+    console.error(
+      '❌ JWT_SECRET appears to be a placeholder value. ' +
+      'Generate a secure secret with: openssl rand -base64 48'
+    );
+    process.exit(1);
+  }
+}
+
 // =============================================================================
 // CONFIGURATION OBJECT
 // =============================================================================
@@ -110,6 +127,7 @@ export const config = {
     jwtSecret: env.JWT_SECRET,
     jwtExpiresIn: env.JWT_EXPIRES_IN,
     bcryptRounds: env.BCRYPT_SALT_ROUNDS,
+    refreshTokenExpiresDays: env.REFRESH_TOKEN_EXPIRES_DAYS,
   },
   
   // Token Economy Rules
