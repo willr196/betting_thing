@@ -1,8 +1,33 @@
 import { z } from 'zod';
 import dotenv from 'dotenv';
 
-// Load environment variables from .env file
-dotenv.config();
+// Keep platform-injected vars authoritative while still supporting local `.env` files.
+if (process.env.NODE_ENV !== 'production') {
+  dotenv.config();
+}
+
+const stripWrappingQuotes = (value: unknown): unknown => {
+  if (typeof value !== 'string') {
+    return value;
+  }
+
+  const trimmed = value.trim();
+
+  if (trimmed.length >= 2) {
+    const hasDoubleQuotes = trimmed.startsWith('"') && trimmed.endsWith('"');
+    const hasSingleQuotes = trimmed.startsWith("'") && trimmed.endsWith("'");
+
+    if (hasDoubleQuotes || hasSingleQuotes) {
+      return trimmed.slice(1, -1);
+    }
+  }
+
+  return trimmed;
+};
+
+const normalizedEnv = Object.fromEntries(
+  Object.entries(process.env).map(([key, value]) => [key, stripWrappingQuotes(value)])
+);
 
 // =============================================================================
 // ENVIRONMENT SCHEMA
@@ -67,7 +92,7 @@ const envSchema = z.object({
 });
 
 // Parse and validate environment
-const parseResult = envSchema.safeParse(process.env);
+const parseResult = envSchema.safeParse(normalizedEnv);
 
 if (!parseResult.success) {
   console.error('❌ Invalid environment variables:');
