@@ -12,6 +12,7 @@ export function RewardsPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'store' | 'history'>('store');
   const [redeemingId, setRedeemingId] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState('');
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
@@ -21,6 +22,7 @@ export function RewardsPage() {
 
   const loadData = async () => {
     setIsLoading(true);
+    setLoadError('');
     try {
       const [rewardsData, redemptionsData] = await Promise.all([
         api.getRewards(),
@@ -28,8 +30,9 @@ export function RewardsPage() {
       ]);
       setRewards(rewardsData.rewards);
       setRedemptions(redemptionsData.redemptions);
-    } catch (error) {
-      console.error('Failed to load rewards:', error);
+    } catch (err) {
+      setLoadError('Failed to load rewards. Please try again.');
+      console.error('Failed to load rewards:', err);
     } finally {
       setIsLoading(false);
     }
@@ -124,12 +127,25 @@ export function RewardsPage() {
         </button>
       </div>
 
+      {/* Load error */}
+      {loadError && (
+        <div className="text-center py-12">
+          <p className="text-red-600 mb-4">{loadError}</p>
+          <button
+            onClick={loadData}
+            className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700"
+          >
+            Retry
+          </button>
+        </div>
+      )}
+
       {/* Content */}
       {isLoading ? (
         <div className="flex justify-center py-12">
           <Spinner size="lg" />
         </div>
-      ) : activeTab === 'store' ? (
+      ) : loadError ? null : activeTab === 'store' ? (
         rewards.length === 0 ? (
           <EmptyState
             title="No rewards available"

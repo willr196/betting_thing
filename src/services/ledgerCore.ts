@@ -76,6 +76,12 @@ export function createLedgerService<
       throw AppError.badRequest('Credit amount must be positive');
     }
 
+    // PURCHASE is reserved for a future real-money flow that requires regulatory
+    // review. Reject it at the ledger level to prevent accidental misuse.
+    if (entry.type === 'PURCHASE') {
+      throw AppError.forbidden('PURCHASE transactions are not supported');
+    }
+
     if (tx) {
       return executeAtomicChange(tx, entry);
     }

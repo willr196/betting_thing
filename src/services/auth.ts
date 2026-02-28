@@ -53,7 +53,7 @@ export const AuthService = {
         );
       }
 
-      await TokenAllowanceService.getStatus(newUser.id, tx);
+      await TokenAllowanceService.getOrCreateStatus(newUser.id, tx);
 
       // Return updated user with balance
       return tx.user.findUniqueOrThrow({
@@ -188,6 +188,23 @@ export const AuthService = {
     await prisma.user.update({
       where: { id: userId },
       data: { refreshTokenHash: null, refreshTokenExpiresAt: null },
+    });
+  },
+
+  /**
+   * Revoke ALL tokens for a user by incrementing tokenVersion.
+   * Any existing JWTs with the old tokenVersion will be rejected by requireAuth.
+   * Also clears the refresh token so persistent sessions are terminated.
+   * Use on password change, account compromise, or forced logout.
+   */
+  async revokeAllTokens(userId: string): Promise<void> {
+    await prisma.user.update({
+      where: { id: userId },
+      data: {
+        tokenVersion: { increment: 1 },
+        refreshTokenHash: null,
+        refreshTokenExpiresAt: null,
+      },
     });
   },
 

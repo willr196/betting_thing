@@ -1,7 +1,7 @@
 import { prisma } from './database.js';
 import { OddsApiService, type OddsScore } from './oddsApi.js';
 import { EventService } from './events.js';
-import { matchOutcomeByName, normalizeOutcome } from './outcomes.js';
+import { matchOutcomeByName, matchOutcomeExact, normalizeOutcome } from './outcomes.js';
 import { AppError } from '../utils/index.js';
 import { logger } from '../logger.js';
 
@@ -196,5 +196,25 @@ export function determineOutcome(outcomes: string[], score: OddsScore): string |
     return drawOutcome ?? null;
   }
 
-  return matchOutcomeByName(outcomes, winnerName);
+  // Try exact (normalised) match first.
+  const exactMatch = matchOutcomeExact(outcomes, winnerName);
+  if (exactMatch) {
+    return exactMatch;
+  }
+
+  // Fall back to fuzzy contains-match and log so we can detect misfires.
+  const fuzzyMatch = matchOutcomeByName(outcomes, winnerName);
+  if (fuzzyMatch) {
+    logger.warn(
+      { winnerName, matchedOutcome: fuzzyMatch, eventOutcomes: outcomes },
+      `Settlement: using fuzzy outcome match for winner "${winnerName}" → "${fuzzyMatch}"`
+    );
+    return fuzzyMatch;
+  }
+
+  logger.error(
+    { winnerName, eventOutcomes: outcomes },
+    `Settlement: could not match winner "${winnerName}" to any outcome: [${outcomes.join(', ')}]`
+  );
+  return null;
 }

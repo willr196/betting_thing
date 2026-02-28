@@ -1,10 +1,15 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { z } from 'zod';
 import { api, ApiError } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
 import { formatDate, formatTokens, formatPoints, getStatusColor } from '../lib/utils';
 import { Card, Badge, Button, Input, Spinner } from '../components/ui';
 import type { Event, EventStats } from '../types';
+
+const stakeSchema = z.object({
+  stakeAmount: z.number().int().min(1, 'Minimum stake is 1').max(35, 'Maximum stake is 35'),
+});
 
 export function EventDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -15,8 +20,9 @@ export function EventDetailPage() {
   const [stats, setStats] = useState<EventStats | null>(null);
   const [odds, setOdds] = useState<Event['currentOdds'] | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
   const [selectedOutcome, setSelectedOutcome] = useState<string | null>(null);
-  const [stakeAmount, setStakeAmount] = useState('5');
+  const [stakeAmount, setStakeAmount] = useState<number | ''>( 5);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -29,8 +35,9 @@ export function EventDetailPage() {
 
   const loadEvent = async () => {
     if (!id) return;
-    
+
     setIsLoading(true);
+    setLoadError('');
     try {
       const [eventData, statsData] = await Promise.all([
         api.getEvent(id),
@@ -41,22 +48,23 @@ export function EventDetailPage() {
       try {
         const oddsData = await api.getEventOdds(id);
         setOdds(oddsData.odds ?? eventData.event.currentOdds ?? null);
-      } catch (error) {
+      } catch {
         setOdds(eventData.event.currentOdds ?? null);
       }
-    } catch (error) {
-      console.error('Failed to load event:', error);
+    } catch (err) {
+      setLoadError('Failed to load event. Please try again.');
+      console.error('Failed to load event:', err);
     } finally {
       setIsLoading(false);
     }
   };
 
   const handleSubmit = async () => {
-    if (!event || !selectedOutcome || !stakeAmount) return;
+    if (!event || !selectedOutcome) return;
 
-    const stake = parseInt(stakeAmount);
-    if (isNaN(stake) || stake < 1 || stake > 35) {
-      setError('Stake must be a number between 1 and 35');
+    const parsed = stakeSchema.safeParse({ stakeAmount });
+    if (!parsed.success) {
+      setError(parsed.error.issues[0]?.message ?? 'Invalid stake amount');
       return;
     }
 
@@ -65,7 +73,7 @@ export function EventDetailPage() {
     setIsSubmitting(true);
 
     try {
-      await api.placePrediction(event.id, selectedOutcome, stake);
+      await api.placePrediction(event.id, selectedOutcome, parsed.data.stakeAmount);
       setSuccess('Prediction placed successfully!');
       await refreshUser();
 
@@ -91,6 +99,20 @@ export function EventDetailPage() {
     );
   }
 
+  if (loadError) {
+    return (
+      <div className="text-center py-12">
+        <p className="text-red-600 mb-4">{loadError}</p>
+        <div className="flex justify-center gap-3">
+          <Button onClick={loadEvent}>Retry</Button>
+          <Button variant="secondary" onClick={() => navigate('/events')}>
+            Back to Events
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
   if (!event) {
     return (
       <div className="text-center py-12">
@@ -109,10 +131,9 @@ export function EventDetailPage() {
     (outcome) =>
       outcome.name.trim().toLowerCase() === (selectedOutcome ?? '').trim().toLowerCase()
   )?.price;
-  const parsedStake = parseInt(stakeAmount || '0');
-  const potentialWin = isNaN(parsedStake) ? 0 : Math.floor(
-    parsedStake * (selectedOdds ?? event.payoutMultiplier)
-  );
+  const potentialWin = stakeAmount === ''
+    ? 0
+    : Math.floor(stakeAmount * (selectedOdds ?? event.payoutMultiplier));
 
   return (
     <div className="max-w-4xl mx-auto">
@@ -277,7 +298,10 @@ export function EventDetailPage() {
                     label="Stake Amount"
                     type="number"
                     value={stakeAmount}
-                    onChange={(e) => setStakeAmount(e.target.value)}
+                    onChange={(e) => {
+                      const val = e.target.valueAsNumber;
+                      setStakeAmount(Number.isNaN(val) ? '' : val);
+                    }}
                     min={1}
                     max={35}
                   />
@@ -299,7 +323,7 @@ export function EventDetailPage() {
                   className="w-full"
                   size="lg"
                   onClick={handleSubmit}
-                  disabled={!selectedOutcome || !stakeAmount || isSubmitting}
+                  disabled={!selectedOutcome || stakeAmount === '' || isSubmitting}
                   isLoading={isSubmitting}
                 >
                   Place Prediction

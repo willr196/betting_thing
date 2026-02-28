@@ -18,7 +18,34 @@ function daysBetween(start: Date, end: Date): number {
 }
 
 export const TokenAllowanceService = {
-  async getStatus(userId: string, tx?: Prisma.TransactionClient) {
+  /**
+   * Read-only: returns the current allowance state without any mutations.
+   * Use for informational endpoints (e.g. GET /auth/balance) where triggering
+   * a daily credit write would be a side-effect on a read request.
+   */
+  async getStatus(userId: string) {
+    const today = startOfUtcDay(new Date());
+    const allowance = await prisma.tokenAllowance.findUnique({
+      where: { userId },
+      select: { tokensRemaining: true, lastResetDate: true },
+    });
+
+    if (!allowance) {
+      return { tokensRemaining: 0, lastResetDate: today };
+    }
+
+    return {
+      tokensRemaining: allowance.tokensRemaining,
+      lastResetDate: allowance.lastResetDate,
+    };
+  },
+
+  /**
+   * Read-write: ensures the allowance record exists and is up-to-date,
+   * crediting any accrued daily tokens as needed.
+   * Use on login, registration, or a dedicated daily-claim endpoint.
+   */
+  async getOrCreateStatus(userId: string, tx?: Prisma.TransactionClient) {
     if (tx) {
       return ensureAllowance(userId, tx);
     }

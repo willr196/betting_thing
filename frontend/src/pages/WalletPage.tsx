@@ -13,9 +13,14 @@ import type { TokenAllowance, TokenTransaction } from '../types';
 
 export function WalletPage() {
   const { user } = useAuth();
+  const PAGE_SIZE = 20;
+
   const [transactions, setTransactions] = useState<TokenTransaction[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [total, setTotal] = useState(0);
+  const [offset, setOffset] = useState(0);
+  const [hasMore, setHasMore] = useState(false);
   const [allowance, setAllowance] = useState<TokenAllowance | null>(null);
   const [pointsBalance, setPointsBalance] = useState(0);
   const [tokenBalance, setTokenBalance] = useState(0);
@@ -29,23 +34,39 @@ export function WalletPage() {
     setIsLoading(true);
     setError('');
     try {
-      const [tokenStatus, points] = await Promise.all([
+      const [tokenStatus, points, data] = await Promise.all([
         api.getTokenAllowance(),
         api.getPointsBalance(),
+        api.getTransactions(PAGE_SIZE, 0),
       ]);
 
       setAllowance(tokenStatus.allowance);
       setTokenBalance(tokenStatus.balance);
       setPointsBalance(points.balance);
 
-      const data = await api.getTransactions(100);
       setTransactions(data.transactions);
       setTotal(data.total);
+      setOffset(PAGE_SIZE);
+      setHasMore(data.transactions.length < data.total);
     } catch (err) {
       setError('Failed to load wallet data. Please try again.');
       console.error('Failed to load transactions:', err);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const loadMore = async () => {
+    setIsLoadingMore(true);
+    try {
+      const data = await api.getTransactions(PAGE_SIZE, offset);
+      setTransactions((prev) => [...prev, ...data.transactions]);
+      setOffset((prev) => prev + PAGE_SIZE);
+      setHasMore(transactions.length + data.transactions.length < data.total);
+    } catch (err) {
+      console.error('Failed to load more transactions:', err);
+    } finally {
+      setIsLoadingMore(false);
     }
   };
 
@@ -146,11 +167,24 @@ export function WalletPage() {
             description="Your token history will appear here"
           />
         ) : (
-          <div className="divide-y divide-gray-100">
-            {transactions.map((tx) => (
-              <TransactionRow key={tx.id} transaction={tx} />
-            ))}
-          </div>
+          <>
+            <div className="divide-y divide-gray-100">
+              {transactions.map((tx) => (
+                <TransactionRow key={tx.id} transaction={tx} />
+              ))}
+            </div>
+            {hasMore && (
+              <div className="mt-4 text-center">
+                <button
+                  onClick={loadMore}
+                  disabled={isLoadingMore}
+                  className="px-4 py-2 text-sm font-medium text-primary-600 hover:text-primary-800 disabled:opacity-50"
+                >
+                  {isLoadingMore ? 'Loading...' : 'Load more'}
+                </button>
+              </div>
+            )}
+          </>
         )}
       </Card>
     </div>

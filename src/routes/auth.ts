@@ -4,8 +4,8 @@ import rateLimit from 'express-rate-limit';
 import { AuthService } from '../services/auth.js';
 import { LedgerService } from '../services/ledger.js';
 import { TokenAllowanceService } from '../services/tokenAllowance.js';
-import { requireAuth, validateBody, getAuthUser, emailSchema, passwordSchema } from '../middleware/index.js';
-import { asyncHandler, parseLimitOffset, sendSuccess } from '../utils/index.js';
+import { requireAuth, validateBody, validateQuery, getAuthUser, emailSchema, passwordSchema } from '../middleware/index.js';
+import { asyncHandler, sendSuccess } from '../utils/index.js';
 import { config } from '../config/index.js';
 
 const router = Router();
@@ -96,6 +96,11 @@ const loginSchema = z.object({
 const changePasswordSchema = z.object({
   currentPassword: z.string().min(1, 'Current password is required'),
   newPassword: passwordSchema,
+});
+
+const transactionsQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(100).default(50),
+  offset: z.coerce.number().int().min(0).default(0),
 });
 
 // =============================================================================
@@ -250,12 +255,10 @@ router.post(
 router.get(
   '/transactions',
   requireAuth,
+  validateQuery(transactionsQuerySchema),
   asyncHandler(async (req, res) => {
     const { userId } = getAuthUser(req);
-    const { limit, offset } = parseLimitOffset(req.query as Record<string, unknown>, {
-      defaultLimit: 50,
-      maxLimit: 100,
-    });
+    const { limit, offset } = req.query as unknown as { limit: number; offset: number };
 
     const result = await LedgerService.getHistory(userId, { limit, offset });
 

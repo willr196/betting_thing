@@ -15,7 +15,7 @@ router.get(
   requireAuth,
   asyncHandler(async (req, res) => {
     const { userId } = getAuthUser(req);
-    const allowance = await TokenAllowanceService.getStatus(userId);
+    const allowance = await TokenAllowanceService.getOrCreateStatus(userId);
     const balance = await LedgerService.getBalance(userId);
 
     sendSuccess(res, {

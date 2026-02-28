@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../lib/api';
 import { formatDate, formatTokens, formatPoints, getStatusColor } from '../lib/utils';
@@ -6,18 +6,49 @@ import { Card, Badge, Spinner, EmptyState, StatCard, Button } from '../component
 import type { Prediction, PredictionStats } from '../types';
 
 export function PredictionsPage() {
+  const POLL_INTERVAL_MS = 60_000;
+
   const [predictions, setPredictions] = useState<Prediction[]>([]);
   const [stats, setStats] = useState<PredictionStats | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
   const [filter, setFilter] = useState<'all' | 'PENDING' | 'WON' | 'LOST' | 'CASHED_OUT'>('all');
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const [secondsAgo, setSecondsAgo] = useState(0);
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const hasPending = predictions.some((p) => p.status === 'PENDING');
+
+  // Update the "X seconds ago" counter every second when there are pending predictions.
+  useEffect(() => {
+    if (!lastUpdated || !hasPending) return;
+    const tick = setInterval(() => {
+      setSecondsAgo(Math.floor((Date.now() - lastUpdated.getTime()) / 1000));
+    }, 1000);
+    return () => clearInterval(tick);
+  }, [lastUpdated, hasPending]);
+
+  // Poll every 60s when there are PENDING predictions.
+  useEffect(() => {
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current);
+      intervalRef.current = null;
+    }
+    if (!hasPending) return;
+    intervalRef.current = setInterval(() => {
+      loadData(true);
+    }, POLL_INTERVAL_MS);
+    return () => {
+      if (intervalRef.current) clearInterval(intervalRef.current);
+    };
+  }, [hasPending]);
 
   useEffect(() => {
     loadData();
   }, [filter]);
 
-  const loadData = async () => {
-    setIsLoading(true);
+  const loadData = async (silent = false) => {
+    if (!silent) setIsLoading(true);
     setError('');
     try {
       const params: { status?: string; limit: number } = { limit: 50 };
@@ -32,20 +63,29 @@ export function PredictionsPage() {
 
       setPredictions(predictionsData.predictions);
       setStats(statsData.stats);
+      setLastUpdated(new Date());
+      setSecondsAgo(0);
     } catch (err) {
-      setError('Failed to load predictions. Please try again.');
+      if (!silent) setError('Failed to load predictions. Please try again.');
       console.error('Failed to load predictions:', err);
     } finally {
-      setIsLoading(false);
+      if (!silent) setIsLoading(false);
     }
   };
 
   return (
     <div>
       {/* Header */}
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">My Predictions</h1>
-        <p className="text-gray-600 mt-1">Track your predictions and winnings</p>
+      <div className="mb-6 flex items-start justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">My Predictions</h1>
+          <p className="text-gray-600 mt-1">Track your predictions and winnings</p>
+        </div>
+        {hasPending && lastUpdated && (
+          <p className="text-xs text-gray-400 mt-1 shrink-0">
+            Updated {secondsAgo}s ago
+          </p>
+        )}
       </div>
 
       {/* Stats */}
