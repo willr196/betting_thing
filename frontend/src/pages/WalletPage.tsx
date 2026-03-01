@@ -12,7 +12,7 @@ import { Card, Spinner, EmptyState } from '../components/ui';
 import type { TokenAllowance, TokenTransaction } from '../types';
 
 export function WalletPage() {
-  const { user } = useAuth();
+  const { } = useAuth();
   const PAGE_SIZE = 20;
 
   const [transactions, setTransactions] = useState<TokenTransaction[]>([]);

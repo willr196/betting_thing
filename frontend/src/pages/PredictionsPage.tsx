@@ -145,7 +145,7 @@ export function PredictionsPage() {
       ) : error ? (
         <div className="text-center py-12">
           <p className="text-red-600 mb-4">{error}</p>
-          <Button onClick={loadData}>Retry</Button>
+          <Button onClick={() => loadData()}>Retry</Button>
         </div>
       ) : predictions.length === 0 ? (
         <EmptyState
