@@ -89,6 +89,7 @@ const envSchema = z.object({
   THE_ODDS_API_BASE_URL: z.string().url().default('https://api.the-odds-api.com/v4'),
   ODDS_SYNC_INTERVAL_SECONDS: z.coerce.number().min(30).default(300),
   SETTLEMENT_INTERVAL_SECONDS: z.coerce.number().min(30).default(300),
+  EVENT_IMPORT_INTERVAL_SECONDS: z.coerce.number().min(60).default(21600),
 });
 
 // Parse and validate environment
@@ -177,6 +178,7 @@ export const config = {
     baseUrl: env.THE_ODDS_API_BASE_URL,
     syncIntervalSeconds: env.ODDS_SYNC_INTERVAL_SECONDS,
     settlementIntervalSeconds: env.SETTLEMENT_INTERVAL_SECONDS,
+    importIntervalSeconds: env.EVENT_IMPORT_INTERVAL_SECONDS,
   },
 } as const;
 

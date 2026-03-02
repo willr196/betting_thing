@@ -22,4 +22,23 @@ router.get(
   })
 );
 
+/**
+ * GET /points/transactions
+ * Get paginated points transaction history for the authenticated user.
+ */
+router.get(
+  '/transactions',
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const { userId } = getAuthUser(req);
+    const limit = Math.min(Number(req.query['limit']) || 20, 100);
+    const offset = Number(req.query['offset']) || 0;
+    const { transactions, total } = await PointsLedgerService.getHistory(userId, {
+      limit,
+      offset,
+    });
+    sendSuccess(res, { transactions, total });
+  })
+);
+
 export default router;

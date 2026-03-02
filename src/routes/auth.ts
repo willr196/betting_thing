@@ -21,7 +21,7 @@ const refreshCookieOptions = {
   secure: config.isProd,
   sameSite: 'strict' as const,
   maxAge: config.auth.refreshTokenExpiresDays * 24 * 60 * 60 * 1000,
-  path: '/api/auth',
+  path: '/api/v1/auth',
 };
 
 function setRefreshCookie(res: Response, token: string) {
@@ -29,7 +29,7 @@ function setRefreshCookie(res: Response, token: string) {
 }
 
 function clearRefreshCookie(res: Response) {
-  res.clearCookie(REFRESH_COOKIE, { path: '/api/auth' });
+  res.clearCookie(REFRESH_COOKIE, { path: '/api/v1/auth' });
 }
 
 // =============================================================================

@@ -23,8 +23,30 @@ if (config.server.trustProxy !== undefined) {
   app.set('trust proxy', config.server.trustProxy);
 }
 
-// Helmet sets various HTTP headers for security
-app.use(helmet());
+// Helmet sets various HTTP headers for security.
+// CSP is configured explicitly for this API:
+//   - defaultSrc/scriptSrc/styleSrc locked to 'self' (no inline content)
+//   - connectSrc allows the configured frontend origin so browsers honour CSRF preflight
+//   - frameSrc/objectSrc blocked entirely — this is a pure API, never embeddable
+//   - upgradeInsecureRequests only applied in production (dev runs on HTTP)
+const cspConnectSrc: string[] = ["'self'"];
+if (config.server.frontendUrl) {
+  cspConnectSrc.push(config.server.frontendUrl);
+}
+
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'"],
+      styleSrc: ["'self'"],
+      connectSrc: cspConnectSrc,
+      frameSrc: ["'none'"],
+      objectSrc: ["'none'"],
+      ...(config.isProd ? { upgradeInsecureRequests: [] } : { upgradeInsecureRequests: null }),
+    },
+  },
+}));
 
 // CORS configuration
 // In development, default to reflecting the request origin so docker/ngrok/browser
@@ -86,7 +108,7 @@ app.use((req, res, next) => {
 // API Routes
 // -----------------------------------------------------------------------------
 
-app.use('/api', routes);
+app.use('/api/v1', routes);
 
 // Root route - API info
 app.get('/', (_req, res) => {
@@ -94,7 +116,7 @@ app.get('/', (_req, res) => {
     name: 'Prediction Platform API',
     version: '1.0.0',
     status: 'running',
-    documentation: '/api/health',
+    documentation: '/api/v1/health',
   });
 });
 

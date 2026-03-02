@@ -1,12 +1,15 @@
 import { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
+import { toast } from 'sonner';
 import { api } from '../lib/api';
+import { useAuth } from '../context/AuthContext';
 import { formatDate, formatTokens, formatPoints, getStatusColor } from '../lib/utils';
 import { Card, Badge, Spinner, EmptyState, StatCard, Button } from '../components/ui';
 import type { Prediction, PredictionStats } from '../types';
 
 export function PredictionsPage() {
   const POLL_INTERVAL_MS = 60_000;
+  const { refreshUser } = useAuth();
 
   const [predictions, setPredictions] = useState<Prediction[]>([]);
   const [stats, setStats] = useState<PredictionStats | null>(null);
@@ -66,11 +69,20 @@ export function PredictionsPage() {
       setLastUpdated(new Date());
       setSecondsAgo(0);
     } catch (err) {
-      if (!silent) setError('Failed to load predictions. Please try again.');
+      if (!silent) {
+        setError('Failed to load predictions. Please try again.');
+        toast.error('Failed to load predictions');
+      }
       console.error('Failed to load predictions:', err);
     } finally {
       if (!silent) setIsLoading(false);
     }
+  };
+
+  const updatePrediction = (updated: Prediction) => {
+    setPredictions((prev) =>
+      prev.map((p) => (p.id === updated.id ? updated : p))
+    );
   };
 
   return (
@@ -160,7 +172,14 @@ export function PredictionsPage() {
       ) : (
         <div className="space-y-4">
           {predictions.map((prediction) => (
-            <PredictionCard key={prediction.id} prediction={prediction} onCashout={loadData} />
+            <PredictionCard
+              key={prediction.id}
+              prediction={prediction}
+              onCashoutSuccess={(updated) => {
+                updatePrediction(updated);
+                refreshUser();
+              }}
+            />
           ))}
         </div>
       )}
@@ -172,23 +191,27 @@ export function PredictionsPage() {
 // PREDICTION CARD
 // =============================================================================
 
-function PredictionCard({ prediction, onCashout }: { prediction: Prediction; onCashout: () => void }) {
+function PredictionCard({
+  prediction,
+  onCashoutSuccess,
+}: {
+  prediction: Prediction;
+  onCashoutSuccess: (updated: Prediction) => void;
+}) {
   const isWon = prediction.status === 'WON';
   const isLost = prediction.status === 'LOST';
   const isPending = prediction.status === 'PENDING';
   const isCashedOut = prediction.status === 'CASHED_OUT';
   const [cashoutValue, setCashoutValue] = useState<number | null>(null);
   const [cashoutLoading, setCashoutLoading] = useState(false);
-  const [cashoutError, setCashoutError] = useState<string | null>(null);
 
   const handleCashoutValue = async () => {
     setCashoutLoading(true);
-    setCashoutError(null);
     try {
       const result = await api.getCashoutValue(prediction.id);
       setCashoutValue(result.cashoutValue);
-    } catch (error) {
-      setCashoutError('Unable to fetch cashout value');
+    } catch {
+      toast.error('Unable to fetch cashout value');
     } finally {
       setCashoutLoading(false);
     }
@@ -196,12 +219,12 @@ function PredictionCard({ prediction, onCashout }: { prediction: Prediction; onC
 
   const handleCashout = async () => {
     setCashoutLoading(true);
-    setCashoutError(null);
     try {
-      await api.cashoutPrediction(prediction.id);
-      onCashout();
-    } catch (error) {
-      setCashoutError('Cashout failed');
+      const result = await api.cashoutPrediction(prediction.id);
+      toast.success(`Cashed out for ${formatPoints(result.prediction.cashoutAmount ?? 0)} points`);
+      onCashoutSuccess(result.prediction);
+    } catch {
+      toast.error('Cashout failed. Please try again.');
     } finally {
       setCashoutLoading(false);
     }
@@ -313,9 +336,6 @@ function PredictionCard({ prediction, onCashout }: { prediction: Prediction; onC
             >
               Cash Out
             </Button>
-            {cashoutError && (
-              <span className="text-xs text-red-500">{cashoutError}</span>
-            )}
           </div>
         </div>
       )}

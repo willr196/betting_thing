@@ -6,6 +6,7 @@ import { LedgerService } from '../services/ledger.js';
 import { prisma } from '../services/database.js';
 import { SettlementWorker } from '../services/settlementWorker.js';
 import { OddsSyncService } from '../services/oddsSync.js';
+import { EventImportService } from '../services/eventImport.js';
 import { AuditLogService } from '../services/auditLog.js';
 import { requireAuth, requireAdmin, validateBody, validateParams, getAuthUser, idParamSchema, positiveIntSchema, futureDateSchema } from '../middleware/index.js';
 import { asyncHandler, parseLimitOffset, sendSuccess } from '../utils/index.js';
@@ -190,6 +191,31 @@ router.post(
   asyncHandler(async (_req, res) => {
     const count = await EventService.autoLockStartedEvents();
     sendSuccess(res, { locked: count });
+  })
+);
+
+/**
+ * POST /admin/events/import
+ * Trigger an event import from The Odds API.
+ */
+router.post(
+  '/events/import',
+  asyncHandler(async (_req, res) => {
+    const result = await EventImportService.runOnce();
+    sendSuccess(res, result);
+  })
+);
+
+/**
+ * GET /admin/events/stale
+ * List LOCKED events that started more than 24 hours ago and are not yet settled.
+ * These may need manual review or cancellation.
+ */
+router.get(
+  '/events/stale',
+  asyncHandler(async (_req, res) => {
+    const events = await EventService.findStaleLockedEvents();
+    sendSuccess(res, { events, count: events.length });
   })
 );
 
@@ -484,6 +510,7 @@ router.get(
       totalTokensInCirculation,
       totalPointsInCirculation,
       totalPointsPaidOut,
+      totalPointsRedeemed,
     ] = await Promise.all([
       prisma.user.count(),
       prisma.event.count(),
@@ -493,6 +520,10 @@ router.get(
       prisma.user.aggregate({ _sum: { pointsBalance: true } }),
       prisma.pointsTransaction.aggregate({
         where: { amount: { gt: 0 } },
+        _sum: { amount: true },
+      }),
+      prisma.pointsTransaction.aggregate({
+        where: { type: 'REDEMPTION', amount: { lt: 0 } },
         _sum: { amount: true },
       }),
     ]);
@@ -528,6 +559,7 @@ router.get(
         points: {
           inCirculation: totalPointsInCirculation._sum.pointsBalance ?? 0,
           totalPaidOut: totalPointsPaidOut._sum.amount ?? 0,
+          totalRedeemed: Math.abs(totalPointsRedeemed._sum.amount ?? 0),
         },
       },
     });

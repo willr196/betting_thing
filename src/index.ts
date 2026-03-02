@@ -3,6 +3,8 @@ import { config } from './config/index.js';
 import { connectDatabase, disconnectDatabase } from './services/database.js';
 import { OddsSyncService } from './services/oddsSync.js';
 import { SettlementWorker } from './services/settlementWorker.js';
+import { EventImportService } from './services/eventImport.js';
+import { EventService } from './services/events.js';
 import { logger } from './logger.js';
 
 // =============================================================================
@@ -24,8 +26,15 @@ async function start(): Promise<void> {
 
     let oddsSyncInterval: ReturnType<typeof setInterval> | undefined;
     let settlementInterval: ReturnType<typeof setInterval> | undefined;
+    let autoLockInterval: ReturnType<typeof setInterval> | undefined;
+    let eventImportInterval: ReturnType<typeof setInterval> | undefined;
 
     if (!config.isTest) {
+      // Run initial event import on startup (non-blocking)
+      EventImportService.runOnce().catch((error) => {
+        logger.error({ err: error }, 'Initial event import failed');
+      });
+
       oddsSyncInterval = setInterval(async () => {
         try {
           await OddsSyncService.runOnce();
@@ -41,6 +50,27 @@ async function start(): Promise<void> {
           logger.error({ err: error }, 'Settlement worker failed');
         }
       }, config.oddsApi.settlementIntervalSeconds * 1000);
+
+      // Auto-lock events that have started (check every minute)
+      autoLockInterval = setInterval(async () => {
+        try {
+          const count = await EventService.autoLockStartedEvents();
+          if (count > 0) {
+            logger.info({ count }, 'Auto-locked started events');
+          }
+        } catch (error) {
+          logger.error({ err: error }, 'Auto-lock failed');
+        }
+      }, 60_000);
+
+      // Re-import events from The Odds API on a configurable interval (default 6h)
+      eventImportInterval = setInterval(async () => {
+        try {
+          await EventImportService.runOnce();
+        } catch (error) {
+          logger.error({ err: error }, 'Scheduled event import failed');
+        }
+      }, config.oddsApi.importIntervalSeconds * 1000);
     }
 
     // Graceful shutdown handling
@@ -49,6 +79,8 @@ async function start(): Promise<void> {
 
       if (oddsSyncInterval) clearInterval(oddsSyncInterval);
       if (settlementInterval) clearInterval(settlementInterval);
+      if (autoLockInterval) clearInterval(autoLockInterval);
+      if (eventImportInterval) clearInterval(eventImportInterval);
 
       server.close(async () => {
         logger.info('HTTP server closed');

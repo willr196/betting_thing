@@ -370,6 +370,24 @@ export const EventService = {
     return result.count;
   },
 
+  /**
+   * Find LOCKED events that started more than `thresholdHours` ago and
+   * have not been settled. These may need manual review or cancellation.
+   */
+  async findStaleLockedEvents(thresholdHours = 24) {
+    const threshold = new Date(Date.now() - thresholdHours * 60 * 60 * 1000);
+    return prisma.event.findMany({
+      where: {
+        status: 'LOCKED',
+        startsAt: { lt: threshold },
+      },
+      orderBy: { startsAt: 'asc' },
+      include: {
+        _count: { select: { predictions: true } },
+      },
+    });
+  },
+
   async updateOdds(eventId: string, odds: NormalizedOdds) {
     return prisma.event.update({
       where: { id: eventId },

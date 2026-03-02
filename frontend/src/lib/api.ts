@@ -7,6 +7,7 @@ import type {
   Prediction,
   PredictionStats,
   TokenTransaction,
+  PointsTransaction,
   TokenAllowance,
   Reward,
   Redemption,
@@ -18,7 +19,7 @@ import type {
 
 // Default to a same-origin API path so Vite's dev proxy can be used.
 // Allow overrides (e.g. docker/ngrok) via VITE_API_URL like "http://localhost:3000/api".
-const API_BASE = (import.meta.env.VITE_API_URL ?? '/api').replace(/\/+$/, '');
+const API_BASE = (import.meta.env.VITE_API_URL ?? '/api/v1').replace(/\/+$/, '');
 
 type StorageLike = {
   getItem(key: string): string | null;
@@ -228,6 +229,15 @@ class ApiClient {
 
   async getPointsBalance(): Promise<{ balance: number; verified: boolean }> {
     return this.request<{ balance: number; verified: boolean }>('/points/balance');
+  }
+
+  async getPointsTransactions(
+    limit = 20,
+    offset = 0
+  ): Promise<{ transactions: PointsTransaction[]; total: number }> {
+    return this.request<{ transactions: PointsTransaction[]; total: number }>(
+      `/points/transactions?limit=${limit}&offset=${offset}`
+    );
   }
 
   // ===========================================================================

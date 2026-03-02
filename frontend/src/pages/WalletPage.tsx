@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { toast } from 'sonner';
 import { api } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
 import {
@@ -9,28 +10,48 @@ import {
   getTransactionLabel,
 } from '../lib/utils';
 import { Card, Spinner, EmptyState } from '../components/ui';
-import type { TokenAllowance, TokenTransaction } from '../types';
+import type { TokenAllowance, TokenTransaction, PointsTransaction } from '../types';
 
 export function WalletPage() {
   const { } = useAuth();
   const PAGE_SIZE = 20;
 
+  const [activeTab, setActiveTab] = useState<'tokens' | 'points'>('tokens');
+
+  // Token history
   const [transactions, setTransactions] = useState<TokenTransaction[]>([]);
+  const [tokenTotal, setTokenTotal] = useState(0);
+  const [tokenOffset, setTokenOffset] = useState(0);
+  const [tokenHasMore, setTokenHasMore] = useState(false);
+
+  // Points history
+  const [pointsTransactions, setPointsTransactions] = useState<PointsTransaction[]>([]);
+  const [pointsTotal, setPointsTotal] = useState(0);
+  const [pointsOffset, setPointsOffset] = useState(0);
+  const [pointsHasMore, setPointsHasMore] = useState(false);
+  const [isPointsLoading, setIsPointsLoading] = useState(false);
+  const [isLoadingMorePoints, setIsLoadingMorePoints] = useState(false);
+
+  // Shared
   const [isLoading, setIsLoading] = useState(true);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
-  const [total, setTotal] = useState(0);
-  const [offset, setOffset] = useState(0);
-  const [hasMore, setHasMore] = useState(false);
   const [allowance, setAllowance] = useState<TokenAllowance | null>(null);
   const [pointsBalance, setPointsBalance] = useState(0);
   const [tokenBalance, setTokenBalance] = useState(0);
   const [error, setError] = useState('');
 
   useEffect(() => {
-    loadTransactions();
+    loadWalletData();
   }, []);
 
-  const loadTransactions = async () => {
+  // Load points history when tab is first switched to points
+  useEffect(() => {
+    if (activeTab === 'points' && pointsTransactions.length === 0 && !isPointsLoading) {
+      loadPointsTransactions();
+    }
+  }, [activeTab]);
+
+  const loadWalletData = async () => {
     setIsLoading(true);
     setError('');
     try {
@@ -45,24 +66,25 @@ export function WalletPage() {
       setPointsBalance(points.balance);
 
       setTransactions(data.transactions);
-      setTotal(data.total);
-      setOffset(PAGE_SIZE);
-      setHasMore(data.transactions.length < data.total);
+      setTokenTotal(data.total);
+      setTokenOffset(PAGE_SIZE);
+      setTokenHasMore(data.transactions.length < data.total);
     } catch (err) {
       setError('Failed to load wallet data. Please try again.');
+      toast.error('Failed to load wallet data');
       console.error('Failed to load transactions:', err);
     } finally {
       setIsLoading(false);
     }
   };
 
-  const loadMore = async () => {
+  const loadMoreTokens = async () => {
     setIsLoadingMore(true);
     try {
-      const data = await api.getTransactions(PAGE_SIZE, offset);
+      const data = await api.getTransactions(PAGE_SIZE, tokenOffset);
       setTransactions((prev) => [...prev, ...data.transactions]);
-      setOffset((prev) => prev + PAGE_SIZE);
-      setHasMore(transactions.length + data.transactions.length < data.total);
+      setTokenOffset((prev) => prev + PAGE_SIZE);
+      setTokenHasMore(transactions.length + data.transactions.length < data.total);
     } catch (err) {
       console.error('Failed to load more transactions:', err);
     } finally {
@@ -70,8 +92,38 @@ export function WalletPage() {
     }
   };
 
-  // Calculate stats from transactions
-  const stats = transactions.reduce(
+  const loadPointsTransactions = async () => {
+    setIsPointsLoading(true);
+    try {
+      const data = await api.getPointsTransactions(PAGE_SIZE, 0);
+      setPointsTransactions(data.transactions);
+      setPointsTotal(data.total);
+      setPointsOffset(PAGE_SIZE);
+      setPointsHasMore(data.transactions.length < data.total);
+    } catch (err) {
+      toast.error('Failed to load points history');
+      console.error('Failed to load points transactions:', err);
+    } finally {
+      setIsPointsLoading(false);
+    }
+  };
+
+  const loadMorePoints = async () => {
+    setIsLoadingMorePoints(true);
+    try {
+      const data = await api.getPointsTransactions(PAGE_SIZE, pointsOffset);
+      setPointsTransactions((prev) => [...prev, ...data.transactions]);
+      setPointsOffset((prev) => prev + PAGE_SIZE);
+      setPointsHasMore(pointsTransactions.length + data.transactions.length < data.total);
+    } catch (err) {
+      console.error('Failed to load more points transactions:', err);
+    } finally {
+      setIsLoadingMorePoints(false);
+    }
+  };
+
+  // Calculate token stats from loaded transactions
+  const tokenStats = transactions.reduce(
     (acc, tx) => {
       if (tx.amount > 0) {
         acc.totalEarned += tx.amount;
@@ -91,7 +143,7 @@ export function WalletPage() {
         <p className="text-gray-600 mt-1">Your tokens, points, and history</p>
       </div>
 
-      {/* Balance Card */}
+      {/* Balance Cards */}
       <div className="grid grid-cols-1 gap-4 mb-6 sm:grid-cols-2">
         <Card className="bg-gradient-to-r from-primary-500 to-accent-500 text-white">
           <div className="text-center py-4">
@@ -122,80 +174,148 @@ export function WalletPage() {
         </Card>
       </div>
 
-      {/* Stats */}
+      {/* Token Stats */}
       <div className="grid grid-cols-2 gap-4 mb-6">
         <Card>
           <p className="text-sm text-gray-500">Total Earned</p>
           <p className="text-2xl font-bold text-green-600">
-            +{formatTokens(stats.totalEarned)}
+            +{formatTokens(tokenStats.totalEarned)}
           </p>
         </Card>
         <Card>
           <p className="text-sm text-gray-500">Total Spent</p>
           <p className="text-2xl font-bold text-red-600">
-            -{formatTokens(stats.totalSpent)}
+            -{formatTokens(tokenStats.totalSpent)}
           </p>
         </Card>
       </div>
 
-      {/* Transaction History */}
-      <Card>
-        <h2 className="font-semibold text-gray-900 mb-4">
-          Transaction History
-          <span className="ml-2 text-sm font-normal text-gray-500">
-            ({total} total)
-          </span>
-        </h2>
+      {/* History Tabs */}
+      <div className="flex gap-2 mb-4">
+        <button
+          onClick={() => setActiveTab('tokens')}
+          className={`px-4 py-2 font-medium rounded-lg transition-colors ${
+            activeTab === 'tokens'
+              ? 'bg-primary-600 text-white'
+              : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+          }`}
+        >
+          Token History
+          {tokenTotal > 0 && (
+            <span className="ml-2 text-xs opacity-75">({tokenTotal})</span>
+          )}
+        </button>
+        <button
+          onClick={() => setActiveTab('points')}
+          className={`px-4 py-2 font-medium rounded-lg transition-colors ${
+            activeTab === 'points'
+              ? 'bg-emerald-600 text-white'
+              : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+          }`}
+        >
+          Points History
+          {pointsTotal > 0 && (
+            <span className="ml-2 text-xs opacity-75">({pointsTotal})</span>
+          )}
+        </button>
+      </div>
 
-        {isLoading ? (
-          <div className="flex justify-center py-8">
-            <Spinner />
-          </div>
-        ) : error ? (
-          <div className="text-center py-8">
-            <p className="text-red-600 mb-4">{error}</p>
-            <button
-              onClick={loadTransactions}
-              className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700"
-            >
-              Retry
-            </button>
-          </div>
-        ) : transactions.length === 0 ? (
-          <EmptyState
-            title="No transactions yet"
-            description="Your token history will appear here"
-          />
-        ) : (
-          <>
-            <div className="divide-y divide-gray-100">
-              {transactions.map((tx) => (
-                <TransactionRow key={tx.id} transaction={tx} />
-              ))}
+      {/* Token History */}
+      {activeTab === 'tokens' && (
+        <Card>
+          <h2 className="font-semibold text-gray-900 mb-4">
+            Token Transactions
+          </h2>
+
+          {isLoading ? (
+            <div className="flex justify-center py-8">
+              <Spinner />
             </div>
-            {hasMore && (
-              <div className="mt-4 text-center">
-                <button
-                  onClick={loadMore}
-                  disabled={isLoadingMore}
-                  className="px-4 py-2 text-sm font-medium text-primary-600 hover:text-primary-800 disabled:opacity-50"
-                >
-                  {isLoadingMore ? 'Loading...' : 'Load more'}
-                </button>
+          ) : error ? (
+            <div className="text-center py-8">
+              <p className="text-red-600 mb-4">{error}</p>
+              <button
+                onClick={loadWalletData}
+                className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700"
+              >
+                Retry
+              </button>
+            </div>
+          ) : transactions.length === 0 ? (
+            <EmptyState
+              title="No transactions yet"
+              description="Your token history will appear here"
+            />
+          ) : (
+            <>
+              <div className="divide-y divide-gray-100">
+                {transactions.map((tx) => (
+                  <TokenTransactionRow key={tx.id} transaction={tx} />
+                ))}
               </div>
-            )}
-          </>
-        )}
-      </Card>
+              {tokenHasMore && (
+                <div className="mt-4 text-center">
+                  <button
+                    onClick={loadMoreTokens}
+                    disabled={isLoadingMore}
+                    className="px-4 py-2 text-sm font-medium text-primary-600 hover:text-primary-800 disabled:opacity-50"
+                  >
+                    {isLoadingMore ? 'Loading...' : 'Load more'}
+                  </button>
+                </div>
+              )}
+            </>
+          )}
+        </Card>
+      )}
+
+      {/* Points History */}
+      {activeTab === 'points' && (
+        <Card>
+          <h2 className="font-semibold text-gray-900 mb-4">
+            Points Transactions
+          </h2>
+
+          {isPointsLoading ? (
+            <div className="flex justify-center py-8">
+              <Spinner />
+            </div>
+          ) : pointsTransactions.length === 0 ? (
+            <EmptyState
+              title="No points transactions yet"
+              description="Win predictions or cash out to earn points"
+            />
+          ) : (
+            <>
+              <div className="divide-y divide-gray-100">
+                {pointsTransactions.map((tx) => (
+                  <PointsTransactionRow key={tx.id} transaction={tx} />
+                ))}
+              </div>
+              {pointsHasMore && (
+                <div className="mt-4 text-center">
+                  <button
+                    onClick={loadMorePoints}
+                    disabled={isLoadingMorePoints}
+                    className="px-4 py-2 text-sm font-medium text-emerald-600 hover:text-emerald-800 disabled:opacity-50"
+                  >
+                    {isLoadingMorePoints ? 'Loading...' : 'Load more'}
+                  </button>
+                </div>
+              )}
+            </>
+          )}
+        </Card>
+      )}
     </div>
   );
 }
 
 // =============================================================================
-// TRANSACTION ROW
+// TOKEN TRANSACTION ROW
 // =============================================================================
 
-function TransactionRow({ transaction }: { transaction: TokenTransaction }) {
+function TokenTransactionRow({ transaction }: { transaction: TokenTransaction }) {
   const isCredit = transaction.amount > 0;
 
   const getIcon = (type: string): string => {
@@ -240,6 +360,68 @@ function TransactionRow({ transaction }: { transaction: TokenTransaction }) {
         </p>
         <p className="text-xs text-gray-500">
           Balance: {formatTokens(transaction.balanceAfter)}
+        </p>
+      </div>
+    </div>
+  );
+}
+
+// =============================================================================
+// POINTS TRANSACTION ROW
+// =============================================================================
+
+function PointsTransactionRow({ transaction }: { transaction: PointsTransaction }) {
+  const isCredit = transaction.amount > 0;
+
+  const getIcon = (type: string): string => {
+    const icons: Record<string, string> = {
+      PREDICTION_WIN: '🏆',
+      CASHOUT: '💸',
+      REDEMPTION: '🎁',
+      REDEMPTION_REFUND: '↩️',
+      ADMIN_CREDIT: '⭐',
+      ADMIN_DEBIT: '⚠️',
+    };
+    return icons[type] ?? '🏅';
+  };
+
+  const getLabel = (type: string): string => {
+    const labels: Record<string, string> = {
+      PREDICTION_WIN: 'Prediction Win',
+      CASHOUT: 'Cashout',
+      REDEMPTION: 'Reward Redeemed',
+      REDEMPTION_REFUND: 'Redemption Refund',
+      ADMIN_CREDIT: 'Admin Credit',
+      ADMIN_DEBIT: 'Admin Debit',
+    };
+    return labels[type] ?? type;
+  };
+
+  return (
+    <div className="flex items-center justify-between py-3">
+      <div className="flex items-center gap-3">
+        <span className="text-xl">{getIcon(transaction.type)}</span>
+        <div>
+          <p className="font-medium text-gray-900">
+            {getLabel(transaction.type)}
+          </p>
+          <p className="text-xs text-gray-500">
+            {formatDate(transaction.createdAt)}
+          </p>
+          {transaction.description && (
+            <p className="text-xs text-gray-400 mt-0.5">
+              {transaction.description}
+            </p>
+          )}
+        </div>
+      </div>
+
+      <div className="text-right">
+        <p className={`font-semibold ${getTransactionColor(transaction.amount)}`}>
+          {isCredit ? '+' : ''}{formatPoints(transaction.amount)} pts
+        </p>
+        <p className="text-xs text-gray-500">
+          Balance: {formatPoints(transaction.balanceAfter)}
         </p>
       </div>
     </div>

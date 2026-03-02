@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { toast } from 'sonner';
 import { z } from 'zod';
 import { api, ApiError } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
@@ -25,7 +26,6 @@ export function EventDetailPage() {
   const [stakeAmount, setStakeAmount] = useState<number | ''>( 5);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
 
   useEffect(() => {
     if (id) {
@@ -69,23 +69,17 @@ export function EventDetailPage() {
     }
 
     setError('');
-    setSuccess('');
     setIsSubmitting(true);
 
     try {
       await api.placePrediction(event.id, selectedOutcome, parsed.data.stakeAmount);
-      setSuccess('Prediction placed successfully!');
+      toast.success('Prediction placed!');
       await refreshUser();
-
-      // Redirect after short delay
-      const timer = setTimeout(() => navigate('/predictions'), 1500);
-      return () => clearTimeout(timer);
+      navigate('/predictions');
     } catch (err) {
-      if (err instanceof ApiError) {
-        setError(err.message);
-      } else {
-        setError('Failed to place prediction');
-      }
+      const message = err instanceof ApiError ? err.message : 'Failed to place prediction';
+      setError(message);
+      toast.error(message);
     } finally {
       setIsSubmitting(false);
     }
@@ -261,12 +255,6 @@ export function EventDetailPage() {
                 {error && (
                   <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-600">
                     {error}
-                  </div>
-                )}
-
-                {success && (
-                  <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded-lg text-sm text-green-600">
-                    {success}
                   </div>
                 )}
 

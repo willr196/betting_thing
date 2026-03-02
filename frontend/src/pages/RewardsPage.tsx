@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { toast } from 'sonner';
 import { api, ApiError } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
 import { formatPoints, getStatusColor, formatDate } from '../lib/utils';
@@ -13,8 +14,6 @@ export function RewardsPage() {
   const [activeTab, setActiveTab] = useState<'store' | 'history'>('store');
   const [redeemingId, setRedeemingId] = useState<string | null>(null);
   const [loadError, setLoadError] = useState('');
-  const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
 
   useEffect(() => {
     loadData();
@@ -32,6 +31,7 @@ export function RewardsPage() {
       setRedemptions(redemptionsData.redemptions);
     } catch (err) {
       setLoadError('Failed to load rewards. Please try again.');
+      toast.error('Failed to load rewards');
       console.error('Failed to load rewards:', err);
     } finally {
       setIsLoading(false);
@@ -40,24 +40,19 @@ export function RewardsPage() {
 
   const handleRedeem = async (reward: Reward) => {
     if ((user?.pointsBalance ?? 0) < reward.pointsCost) {
-      setError('Insufficient balance');
+      toast.error('Insufficient points balance');
       return;
     }
 
-    setError('');
-    setSuccess('');
     setRedeemingId(reward.id);
 
     try {
       await api.redeemReward(reward.id);
-      setSuccess(`Successfully redeemed ${reward.name}!`);
+      toast.success(`Successfully redeemed ${reward.name}!`);
       await Promise.all([refreshUser(), loadData()]);
     } catch (err) {
-      if (err instanceof ApiError) {
-        setError(err.message);
-      } else {
-        setError('Failed to redeem reward');
-      }
+      const message = err instanceof ApiError ? err.message : 'Failed to redeem reward';
+      toast.error(message);
     } finally {
       setRedeemingId(null);
     }
@@ -85,18 +80,6 @@ export function RewardsPage() {
           <span className="text-5xl">🏆</span>
         </div>
       </Card>
-
-      {/* Alerts */}
-      {error && (
-        <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-600">
-          {error}
-        </div>
-      )}
-      {success && (
-        <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded-lg text-sm text-green-600">
-          {success}
-        </div>
-      )}
 
       {/* Tabs */}
       <div className="flex gap-2 mb-6">
