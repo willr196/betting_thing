@@ -49,6 +49,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         try {
           const data = await api.getMe();
           setUser(data.user);
+          setIsLoading(false);
           return;
         } catch (error) {
           // If expired, the request interceptor will already try to refresh.
