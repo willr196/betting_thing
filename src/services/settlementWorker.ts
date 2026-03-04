@@ -53,15 +53,39 @@ export function createSettlementWorker(
       isRunning = true;
 
       try {
+        const autoLocked = await EventService.autoLockStartedEvents();
+        if (autoLocked > 0) {
+          logger.info({ autoLocked }, '[Settlement] Auto-locked started events');
+        }
+
+        const staleCancelled = await EventService.cleanupStaleUnpredictedEvents('system');
+        if (staleCancelled > 0) {
+          logger.info({ staleCancelled }, '[Settlement] Cancelled stale events with no predictions');
+        }
+
+        const now = new Date();
         const pendingEvents = await prisma.event.findMany({
           where: {
             status: 'LOCKED',
             externalSportKey: { not: null },
             externalEventId: { not: null },
+            startsAt: { lte: now },
           },
           // Bound the batch size to avoid unbounded transactions and API load
           take: SETTLEMENT_BATCH_SIZE,
         });
+
+        if (pendingEvents.length === 0) {
+          logger.info('[Settlement] No eligible locked events to poll, skipping');
+          statusStore.update({
+            lastRunAt: new Date(),
+            lastError: undefined,
+            settledEvents: 0,
+            failedEvents: 0,
+            errors: undefined,
+          });
+          return { settledEvents: 0, failedEvents: 0 };
+        }
 
         const eventsBySport = new Map<string, typeof pendingEvents>();
         for (const event of pendingEvents) {

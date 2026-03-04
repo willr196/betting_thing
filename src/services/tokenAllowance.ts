@@ -25,13 +25,42 @@ export const TokenAllowanceService = {
    */
   async getStatus(userId: string) {
     const today = startOfUtcDay(new Date());
-    const allowance = await prisma.tokenAllowance.findUnique({
-      where: { userId },
-      select: { tokensRemaining: true, lastResetDate: true },
-    });
+    const [allowance, user] = await Promise.all([
+      prisma.tokenAllowance.findUnique({
+        where: { userId },
+        select: { tokensRemaining: true, lastResetDate: true },
+      }),
+      prisma.user.findUnique({
+        where: { id: userId },
+        select: { tokenBalance: true },
+      }),
+    ]);
+
+    if (!user) {
+      throw AppError.notFound('User');
+    }
 
     if (!allowance) {
-      return { tokensRemaining: 0, lastResetDate: today };
+      const created = await prisma.tokenAllowance.create({
+        data: {
+          userId,
+          tokensRemaining: user.tokenBalance,
+          lastResetDate: today,
+        },
+        select: { tokensRemaining: true, lastResetDate: true },
+      });
+
+      return created;
+    }
+
+    if (allowance.tokensRemaining !== user.tokenBalance) {
+      const repaired = await prisma.tokenAllowance.update({
+        where: { userId },
+        data: { tokensRemaining: user.tokenBalance },
+        select: { tokensRemaining: true, lastResetDate: true },
+      });
+
+      return repaired;
     }
 
     return {
@@ -73,11 +102,43 @@ export const TokenAllowanceService = {
       );
 
       await upsertAllowance(client, userId, {
-        tokensRemaining: Math.max(0, status.tokensRemaining - amount),
+        tokensRemaining: result.newBalance,
         lastResetDate: status.lastResetDate,
       });
 
       return result;
+    };
+
+    if (tx) {
+      return work(tx);
+    }
+
+    return prisma.$transaction(work);
+  },
+
+  async syncToLedgerBalance(userId: string, tx?: Prisma.TransactionClient) {
+    const work = async (client: Prisma.TransactionClient) => {
+      const [user] = await client.$queryRaw<
+        Array<{ tokenBalance: number }>
+      >`SELECT "tokenBalance" FROM "User" WHERE "id" = ${userId} FOR UPDATE`;
+
+      if (!user) {
+        throw AppError.notFound('User');
+      }
+
+      await client.tokenAllowance.upsert({
+        where: { userId },
+        update: {
+          tokensRemaining: user.tokenBalance,
+        },
+        create: {
+          userId,
+          tokensRemaining: user.tokenBalance,
+          lastResetDate: startOfUtcDay(new Date()),
+        },
+      });
+
+      return user.tokenBalance;
     };
 
     if (tx) {

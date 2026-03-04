@@ -1,21 +1,21 @@
 import { useState, type FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { useToast } from '../context/ToastContext';
 import { ApiError } from '../lib/api';
 import { Button, Input, Card } from '../components/ui';
 
 export function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   
   const { login } = useAuth();
+  const { error: showError } = useToast();
   const navigate = useNavigate();
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    setError('');
     setIsLoading(true);
 
     try {
@@ -23,9 +23,9 @@ export function LoginPage() {
       navigate('/events');
     } catch (err) {
       if (err instanceof ApiError) {
-        setError(err.message);
+        showError(err.message);
       } else {
-        setError('An unexpected error occurred');
+        showError('An unexpected error occurred');
       }
     } finally {
       setIsLoading(false);
@@ -42,12 +42,6 @@ export function LoginPage() {
 
         <Card>
           <form onSubmit={handleSubmit} className="space-y-4">
-            {error && (
-              <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-600">
-                {error}
-              </div>
-            )}
-
             <Input
               label="Email"
               type="email"

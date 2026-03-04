@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { RewardsService } from '../services/rewards.js';
+import { AchievementService } from '../services/achievements.js';
 import { requireAuth, validateBody, validateQuery, validateParams, getAuthUser, idParamSchema } from '../middleware/index.js';
 import { asyncHandler, sendSuccess } from '../utils/index.js';
 
@@ -103,8 +104,9 @@ router.post(
     const { rewardId } = req.body;
 
     const redemption = await RewardsService.redeem(userId, rewardId);
+    const achievements = await AchievementService.checkAndAward(userId);
 
-    sendSuccess(res, { redemption }, 201);
+    sendSuccess(res, { redemption, achievementsUnlocked: achievements.unlocked }, 201);
   })
 );
 
@@ -136,7 +138,8 @@ router.post(
   asyncHandler(async (req, res) => {
     const { userId } = getAuthUser(req);
     const redemption = await RewardsService.redeem(userId, req.params.id as string);
-    sendSuccess(res, { redemption }, 201);
+    const achievements = await AchievementService.checkAndAward(userId);
+    sendSuccess(res, { redemption, achievementsUnlocked: achievements.unlocked }, 201);
   })
 );
 

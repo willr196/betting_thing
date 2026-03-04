@@ -10,3 +10,5 @@ export { TokenAllowanceService } from './tokenAllowance.js';
 export { OddsApiService } from './oddsApi.js';
 export { OddsSyncService } from './oddsSync.js';
 export { SettlementWorker } from './settlementWorker.js';
+export { LeaderboardService } from './leaderboard.js';
+export { AchievementService } from './achievements.js';

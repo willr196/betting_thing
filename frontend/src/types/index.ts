@@ -119,6 +119,7 @@ export type TransactionType =
   | 'PREDICTION_STAKE'
   | 'PREDICTION_WIN'
   | 'PREDICTION_REFUND'
+  | 'STREAK_BONUS'
   | 'CASHOUT'
   | 'REDEMPTION'
   | 'REDEMPTION_REFUND'
@@ -183,4 +184,65 @@ export interface PointsTransaction {
   referenceId: string | null;
   description: string | null;
   createdAt: string;
+}
+
+export type LeaderboardPeriod = 'weekly' | 'monthly' | 'all-time';
+
+export interface LeaderboardEntry {
+  rank: number;
+  userId: string;
+  displayName: string;
+  totalPredictions: number;
+  wins: number;
+  losses: number;
+  totalPointsWon: number;
+  winRate: number;
+  currentStreak: number;
+  longestStreak: number;
+}
+
+export interface AchievementUnlocked {
+  key: string;
+  name: string;
+  iconEmoji: string;
+}
+
+export interface Achievement {
+  key: string;
+  name: string;
+  description: string;
+  iconEmoji: string;
+  category: string;
+  threshold: number;
+  unlockedAt: string | null;
+  currentValue: number;
+  progress: number;
+}
+
+export interface DashboardActivity {
+  id: string;
+  currency: 'TOKENS' | 'POINTS';
+  type: string;
+  amount: number;
+  balanceAfter: number;
+  description: string | null;
+  createdAt: string;
+}
+
+export interface DashboardStats {
+  predictionStats: PredictionStats & {
+    totalPointsEarned: number;
+  };
+  streak: {
+    current: number;
+    longest: number;
+  };
+  recentActivity: DashboardActivity[];
+  allowance: {
+    tokensRemaining: number;
+    lastResetDate: string;
+    nextResetAt: string;
+    daysUntilMaxStack: number;
+  };
+  achievementProgress: Achievement[];
 }

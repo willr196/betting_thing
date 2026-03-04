@@ -1,5 +1,7 @@
+import { useEffect, useState } from 'react';
 import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { api } from '../lib/api';
 import { formatTokens, formatPoints } from '../lib/utils';
 import { Button } from './ui';
 
@@ -10,6 +12,35 @@ import { Button } from './ui';
 export function Layout() {
   const { user, isAuthenticated, logout } = useAuth();
   const navigate = useNavigate();
+  const [streakCount, setStreakCount] = useState(0);
+
+  useEffect(() => {
+    let isCancelled = false;
+
+    async function loadStreak() {
+      if (!isAuthenticated) {
+        setStreakCount(0);
+        return;
+      }
+
+      try {
+        const result = await api.getMyLeaderboardRank('all-time');
+        if (!isCancelled) {
+          setStreakCount(result.rank.currentStreak);
+        }
+      } catch {
+        if (!isCancelled) {
+          setStreakCount(0);
+        }
+      }
+    }
+
+    void loadStreak();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [isAuthenticated, user?.id]);
 
   const handleLogout = () => {
     logout();
@@ -35,6 +66,8 @@ export function Layout() {
                 <div className="hidden sm:flex sm:ml-8 sm:space-x-4">
                   <NavItem to="/events">Events</NavItem>
                   <NavItem to="/predictions">My Predictions</NavItem>
+                  <NavItem to="/leaderboard">Leaderboard</NavItem>
+                  <NavItem to="/transactions">Transactions</NavItem>
                   <NavItem to="/rewards">Rewards</NavItem>
                 </div>
               )}
@@ -63,6 +96,12 @@ export function Layout() {
                         {formatPoints(user?.pointsBalance ?? 0)}
                       </span>
                     </Link>
+                    {streakCount >= 2 && (
+                      <div className="flex items-center px-3 py-1.5 bg-amber-50 rounded-lg text-amber-700">
+                        <span className="mr-1 text-lg">🔥</span>
+                        <span className="font-semibold">{streakCount}</span>
+                      </div>
+                    )}
                   </div>
 
                   {/* User Menu */}
@@ -97,6 +136,8 @@ export function Layout() {
             <div className="flex justify-around py-2">
               <MobileNavItem to="/events">Events</MobileNavItem>
               <MobileNavItem to="/predictions">Predictions</MobileNavItem>
+              <MobileNavItem to="/leaderboard">Leaders</MobileNavItem>
+              <MobileNavItem to="/transactions">History</MobileNavItem>
               <MobileNavItem to="/rewards">Rewards</MobileNavItem>
               <MobileNavItem to="/wallet">Wallet</MobileNavItem>
             </div>

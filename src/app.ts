@@ -66,6 +66,8 @@ app.use(cors({
 const limiter = rateLimit({
   windowMs: config.rateLimit.windowMinutes * 60 * 1000,
   max: config.rateLimit.max,
+  skip: (req) =>
+    req.path.endsWith('/auth/login') || req.path.endsWith('/auth/register'),
   message: {
     success: false,
     error: {
@@ -94,12 +96,33 @@ app.use(cookieParser());
 app.use((req, res, next) => {
   const requestId = (req.headers['x-request-id'] as string) ?? randomUUID();
   res.setHeader('x-request-id', requestId);
-  (req as express.Request & { requestId: string }).requestId = requestId;
+  const requestStartedAt = process.hrtime.bigint();
+  const request = req as express.Request & {
+    requestId: string;
+    user?: { userId: string };
+  };
+  request.requestId = requestId;
 
   logger.info(
     { requestId, method: req.method, path: req.path },
     'Incoming request'
   );
+
+  res.on('finish', () => {
+    const durationMs = Number(process.hrtime.bigint() - requestStartedAt) / 1_000_000;
+
+    logger.info(
+      {
+        requestId,
+        method: req.method,
+        path: req.originalUrl,
+        statusCode: res.statusCode,
+        durationMs: Math.round(durationMs * 100) / 100,
+        userId: request.user?.userId ?? null,
+      },
+      'Request completed'
+    );
+  });
 
   next();
 });

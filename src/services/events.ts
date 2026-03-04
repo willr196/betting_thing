@@ -2,6 +2,9 @@ import { EventStatus, Prisma } from '@prisma/client';
 import { prisma } from './database.js';
 import { LedgerService } from './ledger.js';
 import { PointsLedgerService } from './pointsLedger.js';
+import { TokenAllowanceService } from './tokenAllowance.js';
+import { AchievementService } from './achievements.js';
+import { LeaderboardService } from './leaderboard.js';
 import { AppError } from '../utils/index.js';
 import type { SettlementResult } from '../types/index.js';
 import type { NormalizedOdds } from './oddsApi.js';
@@ -241,6 +244,8 @@ export const EventService = {
               },
               tx
             );
+            await LeaderboardService.updateAfterSettlement(prediction.userId, true, payout, tx);
+            await AchievementService.checkAndAward(prediction.userId, tx);
 
             winners++;
             totalPayout += payout;
@@ -261,6 +266,8 @@ export const EventService = {
               continue;
             }
 
+            await LeaderboardService.updateAfterSettlement(prediction.userId, false, 0, tx);
+            await AchievementService.checkAndAward(prediction.userId, tx);
             losers++;
           }
         }
@@ -379,6 +386,7 @@ export const EventService = {
             prediction.id,
             tx
           );
+          await TokenAllowanceService.syncToLedgerBalance(prediction.userId, tx);
 
           refunded++;
         }
@@ -425,6 +433,39 @@ export const EventService = {
         _count: { select: { predictions: true } },
       },
     });
+  },
+
+  async cleanupStaleUnpredictedEvents(
+    cancelledBy = 'system',
+    thresholdHours = 24
+  ): Promise<number> {
+    const threshold = new Date(Date.now() - thresholdHours * 60 * 60 * 1000);
+    const staleEvents = await prisma.event.findMany({
+      where: {
+        status: { in: ['OPEN', 'LOCKED'] },
+        startsAt: { lt: threshold },
+        predictions: { none: {} },
+      },
+      select: { id: true },
+    });
+
+    let cancelled = 0;
+    for (const event of staleEvents) {
+      try {
+        await this.cancel(event.id, cancelledBy);
+        cancelled++;
+      } catch (error) {
+        if (error instanceof AppError && error.code === 'EVENT_ALREADY_SETTLED') {
+          continue;
+        }
+        if (error instanceof AppError && String(error.code) === 'ALREADY_CANCELLED') {
+          continue;
+        }
+        throw error;
+      }
+    }
+
+    return cancelled;
   },
 
   async updateOdds(eventId: string, odds: NormalizedOdds) {

@@ -54,6 +54,8 @@ model User {
   pointsTransactions PointsTransaction[]
   redemptions       Redemption[]
   tokenAllowances   TokenAllowance[]
+  leaderboards      Leaderboard[]
+  userAchievements  UserAchievement[]
   
   @@index([email])
   @@index([createdAt])
@@ -94,6 +96,7 @@ model TokenTransaction {
   
   @@index([userId])
   @@index([userId, createdAt])
+  @@index([userId, type])
   @@index([type])
   @@index([referenceType, referenceId])
 }
@@ -104,6 +107,7 @@ enum TransactionType {
   PREDICTION_STAKE   // Tokens wagered on prediction (negative)
   PREDICTION_WIN     // Winnings from correct prediction (positive)
   PREDICTION_REFUND  // Refund from cancelled event (positive)
+  STREAK_BONUS       // Bonus tokens for hitting win streak milestones
   REDEMPTION         // Tokens spent on reward (negative)
   PURCHASE           // Tokens bought with real money (positive) - future
   ADMIN_CREDIT       // Manual admin adjustment (positive)
@@ -136,8 +140,41 @@ model PointsTransaction {
   
   @@index([userId])
   @@index([userId, createdAt])
+  @@index([userId, type])
   @@index([type])
   @@index([referenceType, referenceId])
+}
+
+// =============================================================================
+// LEADERBOARD
+// =============================================================================
+// Materialized per-user ranking stats for weekly/monthly/all-time periods.
+
+model Leaderboard {
+  id               String            @id @default(cuid())
+  userId           String
+  user             User              @relation(fields: [userId], references: [id])
+  period           LeaderboardPeriod
+  periodKey        String
+
+  totalPredictions Int               @default(0)
+  wins             Int               @default(0)
+  losses           Int               @default(0)
+  totalPointsWon   Int               @default(0)
+  winRate          Float             @default(0)
+  longestStreak    Int               @default(0)
+  currentStreak    Int               @default(0)
+
+  updatedAt        DateTime          @updatedAt
+
+  @@unique([userId, period, periodKey])
+  @@index([period, periodKey, totalPointsWon])
+}
+
+enum LeaderboardPeriod {
+  WEEKLY
+  MONTHLY
+  ALL_TIME
 }
 
 enum PointsTransactionType {
@@ -270,6 +307,8 @@ model Prediction {
   @@unique([userId, eventId])
   
   @@index([userId])
+  @@index([userId, status])
+  @@index([userId, createdAt])
   @@index([eventId])
   @@index([status])
   @@index([eventId, status])
@@ -381,4 +420,32 @@ enum RedemptionStatus {
   PENDING    // Awaiting fulfilment
   FULFILLED  // Reward delivered to user
   CANCELLED  // Cancelled, points refunded
+}
+
+// =============================================================================
+// ACHIEVEMENTS
+// =============================================================================
+
+model Achievement {
+  id          String            @id @default(cuid())
+  key         String            @unique
+  name        String
+  description String
+  iconEmoji   String
+  category    String
+  threshold   Int
+
+  userAchievements UserAchievement[]
+}
+
+model UserAchievement {
+  id            String      @id @default(cuid())
+  userId        String
+  user          User        @relation(fields: [userId], references: [id])
+  achievementId String
+  achievement   Achievement @relation(fields: [achievementId], references: [id])
+  unlockedAt    DateTime    @default(now())
+
+  @@unique([userId, achievementId])
+  @@index([userId])
 }

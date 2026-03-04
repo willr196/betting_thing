@@ -1,5 +1,6 @@
 import { config } from '../config/index.js';
 import { AppError } from '../utils/index.js';
+import { logger } from '../logger.js';
 
 export interface OddsOutcome {
   name: string;
@@ -21,6 +22,30 @@ export interface OddsScore {
 }
 
 const BASE_URL = config.oddsApi.baseUrl;
+const LOW_QUOTA_THRESHOLD = 0.2;
+const CRITICAL_QUOTA_THRESHOLD = 0.1;
+
+type SportOddsEvent = {
+  id: string;
+  sport_key: string;
+  commence_time: string;
+  bookmakers?: Array<{
+    markets?: Array<{
+      outcomes?: OddsOutcome[];
+    }>;
+  }>;
+  home_team?: string;
+  away_team?: string;
+};
+
+type CacheEntry<T> = {
+  value: T;
+  expiresAtMs: number;
+};
+
+const sportOddsCache = new Map<string, CacheEntry<SportOddsEvent[]>>();
+const scoresCache = new Map<string, CacheEntry<OddsScore[]>>();
+let remainingRequests: number | null = null;
 
 function buildUrl(path: string, params: Record<string, string | number | undefined>) {
   const url = new URL(`${BASE_URL}${path}`);
@@ -33,79 +58,185 @@ function buildUrl(path: string, params: Record<string, string | number | undefin
   return url.toString();
 }
 
-export const OddsApiService = {
-  async getOddsForSport(sportKey: string) {
-    const url = buildUrl(`/sports/${sportKey}/odds`, {
-      regions: config.oddsApi.regions,
-      markets: config.oddsApi.markets,
-    });
+function getCachedValue<T>(store: Map<string, CacheEntry<T>>, key: string): T | null {
+  const cached = store.get(key);
+  if (!cached) {
+    return null;
+  }
 
-    const response = await fetch(url);
-    if (!response.ok) {
-      throw AppError.internal(`Odds API error: ${response.status}`);
-    }
+  if (cached.expiresAtMs <= Date.now()) {
+    store.delete(key);
+    return null;
+  }
 
-    return (await response.json()) as Array<{
-      id: string;
-      sport_key: string;
-      commence_time: string;
-      bookmakers?: Array<{
-        markets?: Array<{
-          outcomes?: OddsOutcome[];
-        }>;
-      }>;
-      home_team?: string;
-      away_team?: string;
+  return cached.value;
+}
+
+function setCachedValue<T>(store: Map<string, CacheEntry<T>>, key: string, value: T, ttlMs: number) {
+  store.set(key, {
+    value,
+    expiresAtMs: Date.now() + ttlMs,
+  });
+}
+
+function updateRemainingRequests(response: Response, endpoint: string) {
+  const rawRemaining = response.headers.get('x-requests-remaining');
+  if (!rawRemaining) {
+    return;
+  }
+
+  const parsedRemaining = Number.parseInt(rawRemaining, 10);
+  if (!Number.isFinite(parsedRemaining)) {
+    return;
+  }
+
+  const previousRemaining = remainingRequests;
+  remainingRequests = parsedRemaining;
+
+  const monthlyQuota = config.oddsApi.monthlyQuota;
+  const remainingRatio = parsedRemaining / monthlyQuota;
+
+  logger.info(
+    {
+      endpoint,
+      remainingRequests: parsedRemaining,
+      monthlyQuota,
+      remainingPercent: Math.round(remainingRatio * 10000) / 100,
+    },
+    '[OddsAPI] Requests remaining'
+  );
+
+  if (
+    remainingRatio <= CRITICAL_QUOTA_THRESHOLD &&
+    (previousRemaining === null || previousRemaining / monthlyQuota > CRITICAL_QUOTA_THRESHOLD)
+  ) {
+    logger.warn(
+      { remainingRequests: parsedRemaining, monthlyQuota },
+      '[OddsAPI] Quota below 10% - non-essential polling should be paused'
+    );
+    return;
+  }
+
+  if (
+    remainingRatio <= LOW_QUOTA_THRESHOLD &&
+    (previousRemaining === null || previousRemaining / monthlyQuota > LOW_QUOTA_THRESHOLD)
+  ) {
+    logger.warn(
+      { remainingRequests: parsedRemaining, monthlyQuota },
+      '[OddsAPI] Quota below 20%'
+    );
+  }
+}
+
+async function fetchOddsJson<T>(url: string, endpoint: string): Promise<T> {
+  const response = await fetch(url);
+  updateRemainingRequests(response, endpoint);
+
+  if (!response.ok) {
+    throw AppError.internal(`Odds API error: ${response.status}`);
+  }
+
+  return (await response.json()) as T;
+}
+
+function normalizeEventOdds(event: {
+  bookmakers?: Array<{
+    markets?: Array<{
+      outcomes?: OddsOutcome[];
     }>;
+  }>;
+}): NormalizedOdds | null {
+  const outcomes = event.bookmakers?.[0]?.markets?.[0]?.outcomes ?? [];
+  if (outcomes.length === 0) {
+    return null;
+  }
+
+  return {
+    outcomes,
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+export const OddsApiService = {
+  getRemainingRequests() {
+    return remainingRequests;
   },
 
-  async getEventOdds(sportKey: string, eventId: string): Promise<NormalizedOdds | null> {
+  getQuotaStatus() {
+    const monthlyQuota = config.oddsApi.monthlyQuota;
+    const remaining = remainingRequests;
+    const remainingRatio = remaining === null ? null : remaining / monthlyQuota;
+
+    return {
+      monthlyQuota,
+      remainingRequests: remaining,
+      remainingPercent: remainingRatio === null ? null : Math.round(remainingRatio * 10000) / 100,
+      nonEssentialPollingAllowed:
+        remainingRatio === null ? true : remainingRatio > CRITICAL_QUOTA_THRESHOLD,
+    };
+  },
+
+  shouldPauseNonEssentialPolling() {
+    const monthlyQuota = config.oddsApi.monthlyQuota;
+    if (remainingRequests === null) {
+      return false;
+    }
+    return remainingRequests / monthlyQuota <= CRITICAL_QUOTA_THRESHOLD;
+  },
+
+  clearCache() {
+    sportOddsCache.clear();
+    scoresCache.clear();
+    logger.info('[OddsAPI] Cleared in-memory odds/scores cache');
+  },
+
+  async getOddsForSport(sportKey: string, options: { forceRefresh?: boolean } = {}) {
+    if (!options.forceRefresh) {
+      const cached = getCachedValue(sportOddsCache, sportKey);
+      if (cached) {
+        return cached;
+      }
+    }
+
     const url = buildUrl(`/sports/${sportKey}/odds`, {
       regions: config.oddsApi.regions,
       markets: config.oddsApi.markets,
-      eventIds: eventId,
     });
 
-    const response = await fetch(url);
-    if (!response.ok) {
-      throw AppError.internal(`Odds API error: ${response.status}`);
-    }
+    const data = await fetchOddsJson<SportOddsEvent[]>(url, `/sports/${sportKey}/odds`);
+    setCachedValue(sportOddsCache, sportKey, data, config.oddsApi.cacheTtlMs);
+    return data;
+  },
 
-    const data = (await response.json()) as Array<{
-      id: string;
-      bookmakers?: Array<{
-        markets?: Array<{
-          outcomes?: OddsOutcome[];
-        }>;
-      }>;
-    }>;
-
+  async getEventOdds(
+    sportKey: string,
+    eventId: string,
+    options: { forceRefresh?: boolean } = {}
+  ): Promise<NormalizedOdds | null> {
+    const data = await this.getOddsForSport(sportKey, options);
     const event = data.find((item) => item.id === eventId);
+
     if (!event) {
       return null;
     }
 
-    const outcomes = event.bookmakers?.[0]?.markets?.[0]?.outcomes ?? [];
-    if (outcomes.length === 0) {
-      return null;
-    }
-
-    return {
-      outcomes,
-      updatedAt: new Date().toISOString(),
-    };
+    return normalizeEventOdds(event);
   },
 
-  async getScores(sportKey: string): Promise<OddsScore[]> {
+  async getScores(sportKey: string, options: { forceRefresh?: boolean } = {}): Promise<OddsScore[]> {
+    if (!options.forceRefresh) {
+      const cached = getCachedValue(scoresCache, sportKey);
+      if (cached) {
+        return cached;
+      }
+    }
+
     const url = buildUrl(`/sports/${sportKey}/scores`, {
       daysFrom: 1,
     });
 
-    const response = await fetch(url);
-    if (!response.ok) {
-      throw AppError.internal(`Odds API error: ${response.status}`);
-    }
-
-    return (await response.json()) as OddsScore[];
+    const scores = await fetchOddsJson<OddsScore[]>(url, `/sports/${sportKey}/scores`);
+    setCachedValue(scoresCache, sportKey, scores, config.oddsApi.scoresCacheTtlMs);
+    return scores;
   },
 };

@@ -68,6 +68,19 @@ export function createEventImportService(
         logger.debug('[EventImport] Previous run still in progress, skipping');
         return { imported: 0, updated: 0, skipped: 0 };
       }
+
+      if (OddsApiService.shouldPauseNonEssentialPolling()) {
+        const quota = OddsApiService.getQuotaStatus();
+        logger.warn(
+          {
+            remainingRequests: quota.remainingRequests,
+            monthlyQuota: quota.monthlyQuota,
+          },
+          '[EventImport] Skipping import - quota below 10%'
+        );
+        return { imported: 0, updated: 0, skipped: 0 };
+      }
+
       isRunning = true;
 
       let totalImported = 0;

@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { PredictionService } from '../services/predictions.js';
+import { AchievementService } from '../services/achievements.js';
 import { requireAuth, validateBody, validateQuery, validateParams, getAuthUser, idParamSchema, positiveIntSchema } from '../middleware/index.js';
 import { asyncHandler, sendSuccess } from '../utils/index.js';
 
@@ -44,8 +45,9 @@ router.post(
       predictedOutcome,
       stakeAmount,
     });
+    const achievements = await AchievementService.checkAndAward(userId);
 
-    sendSuccess(res, { prediction }, 201);
+    sendSuccess(res, { prediction, achievementsUnlocked: achievements.unlocked }, 201);
   })
 );
 
@@ -111,7 +113,8 @@ router.post(
   asyncHandler(async (req, res) => {
     const { userId } = getAuthUser(req);
     const prediction = await PredictionService.cashout(req.params.id as string, userId);
-    sendSuccess(res, { prediction });
+    const achievements = await AchievementService.checkAndAward(userId);
+    sendSuccess(res, { prediction, achievementsUnlocked: achievements.unlocked });
   })
 );
 

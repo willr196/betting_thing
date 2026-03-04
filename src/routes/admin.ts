@@ -6,6 +6,7 @@ import { LedgerService } from '../services/ledger.js';
 import { prisma } from '../services/database.js';
 import { SettlementWorker } from '../services/settlementWorker.js';
 import { OddsSyncService } from '../services/oddsSync.js';
+import { OddsApiService } from '../services/oddsApi.js';
 import { EventImportService } from '../services/eventImport.js';
 import { AuditLogService } from '../services/auditLog.js';
 import { requireAuth, requireAdmin, validateBody, validateParams, getAuthUser, idParamSchema, positiveIntSchema, futureDateSchema } from '../middleware/index.js';
@@ -226,8 +227,12 @@ router.get(
 router.post(
   '/odds/sync',
   asyncHandler(async (_req, res) => {
+    OddsApiService.clearCache();
     const result = await OddsSyncService.runOnce();
-    sendSuccess(res, result);
+    sendSuccess(res, {
+      ...result,
+      quota: OddsApiService.getQuotaStatus(),
+    });
   })
 );
 

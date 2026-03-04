@@ -151,10 +151,6 @@ export const LedgerService = {
   },
 
   /**
-   * Credit winnings for a successful prediction.
-   * Called during event settlement.
-   */
-  /**
    * Refund stake for a cancelled event.
    * Called when an event is cancelled.
    */

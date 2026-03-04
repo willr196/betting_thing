@@ -1,8 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
-import { toast } from 'sonner';
 import { api } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
+import { useToast } from '../context/ToastContext';
 import { formatDate, formatTokens, formatPoints, getStatusColor } from '../lib/utils';
 import { Card, Badge, Spinner, EmptyState, StatCard, Button } from '../components/ui';
 import type { Prediction, PredictionStats } from '../types';
@@ -10,6 +10,7 @@ import type { Prediction, PredictionStats } from '../types';
 export function PredictionsPage() {
   const POLL_INTERVAL_MS = 60_000;
   const { refreshUser } = useAuth();
+  const { success: showSuccess, error: showError } = useToast();
 
   const [predictions, setPredictions] = useState<Prediction[]>([]);
   const [stats, setStats] = useState<PredictionStats | null>(null);
@@ -71,7 +72,7 @@ export function PredictionsPage() {
     } catch (err) {
       if (!silent) {
         setError('Failed to load predictions. Please try again.');
-        toast.error('Failed to load predictions');
+        showError('Failed to load predictions');
       }
       console.error('Failed to load predictions:', err);
     } finally {
@@ -179,6 +180,8 @@ export function PredictionsPage() {
                 updatePrediction(updated);
                 refreshUser();
               }}
+              onNotifySuccess={showSuccess}
+              onNotifyError={showError}
             />
           ))}
         </div>
@@ -194,9 +197,13 @@ export function PredictionsPage() {
 function PredictionCard({
   prediction,
   onCashoutSuccess,
+  onNotifySuccess,
+  onNotifyError,
 }: {
   prediction: Prediction;
   onCashoutSuccess: (updated: Prediction) => void;
+  onNotifySuccess: (message: string) => void;
+  onNotifyError: (message: string) => void;
 }) {
   const isWon = prediction.status === 'WON';
   const isLost = prediction.status === 'LOST';
@@ -211,7 +218,7 @@ function PredictionCard({
       const result = await api.getCashoutValue(prediction.id);
       setCashoutValue(result.cashoutValue);
     } catch {
-      toast.error('Unable to fetch cashout value');
+      onNotifyError('Unable to fetch cashout value');
     } finally {
       setCashoutLoading(false);
     }
@@ -221,10 +228,15 @@ function PredictionCard({
     setCashoutLoading(true);
     try {
       const result = await api.cashoutPrediction(prediction.id);
-      toast.success(`Cashed out for ${formatPoints(result.prediction.cashoutAmount ?? 0)} points`);
+      onNotifySuccess(
+        `Cashed out for ${formatPoints(result.prediction.cashoutAmount ?? 0)} points`
+      );
+      for (const achievement of result.achievementsUnlocked ?? []) {
+        onNotifySuccess(`${achievement.iconEmoji} Achievement unlocked: ${achievement.name}`);
+      }
       onCashoutSuccess(result.prediction);
     } catch {
-      toast.error('Cashout failed. Please try again.');
+      onNotifyError('Cashout failed. Please try again.');
     } finally {
       setCashoutLoading(false);
     }

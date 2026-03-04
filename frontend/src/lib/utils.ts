@@ -73,6 +73,7 @@ export function getTransactionLabel(type: string): string {
     PREDICTION_STAKE: 'Prediction Stake',
     PREDICTION_WIN: 'Prediction Win',
     PREDICTION_REFUND: 'Refund',
+    STREAK_BONUS: 'Streak Bonus',
     REDEMPTION: 'Redemption',
     REDEMPTION_REFUND: 'Redemption Refund',
     PURCHASE: 'Token Purchase',

@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { useToast } from '../context/ToastContext';
 import { ApiError } from '../lib/api';
 import { Button, Input, Card } from '../components/ui';
 
@@ -8,25 +9,24 @@ export function RegisterPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   
   const { register } = useAuth();
+  const { error: showError } = useToast();
   const navigate = useNavigate();
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    setError('');
 
     // Validate passwords match
     if (password !== confirmPassword) {
-      setError('Passwords do not match');
+      showError('Passwords do not match');
       return;
     }
 
     // Validate password strength
     if (password.length < 8) {
-      setError('Password must be at least 8 characters');
+      showError('Password must be at least 8 characters');
       return;
     }
 
@@ -37,9 +37,9 @@ export function RegisterPage() {
       navigate('/events');
     } catch (err) {
       if (err instanceof ApiError) {
-        setError(err.message);
+        showError(err.message);
       } else {
-        setError('An unexpected error occurred');
+        showError('An unexpected error occurred');
       }
     } finally {
       setIsLoading(false);
@@ -56,12 +56,6 @@ export function RegisterPage() {
 
         <Card>
           <form onSubmit={handleSubmit} className="space-y-4">
-            {error && (
-              <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-600">
-                {error}
-              </div>
-            )}
-
             <Input
               label="Email"
               type="email"

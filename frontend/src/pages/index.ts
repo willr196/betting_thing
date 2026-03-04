@@ -3,5 +3,7 @@ export { RegisterPage } from './RegisterPage';
 export { EventsPage } from './EventsPage';
 export { EventDetailPage } from './EventDetailPage';
 export { PredictionsPage } from './PredictionsPage';
+export { LeaderboardPage } from './LeaderboardPage';
 export { RewardsPage } from './RewardsPage';
+export { TransactionsPage } from './TransactionsPage';
 export { WalletPage } from './WalletPage';

@@ -4,6 +4,10 @@ import rateLimit from 'express-rate-limit';
 import { AuthService } from '../services/auth.js';
 import { LedgerService } from '../services/ledger.js';
 import { TokenAllowanceService } from '../services/tokenAllowance.js';
+import { PointsLedgerService } from '../services/pointsLedger.js';
+import { PredictionService } from '../services/predictions.js';
+import { LeaderboardService } from '../services/leaderboard.js';
+import { AchievementService } from '../services/achievements.js';
 import { requireAuth, validateBody, validateQuery, getAuthUser, emailSchema, passwordSchema } from '../middleware/index.js';
 import { asyncHandler, sendSuccess } from '../utils/index.js';
 import { config } from '../config/index.js';
@@ -39,12 +43,12 @@ function clearRefreshCookie(res: Response) {
 
 const loginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 5,
+  max: 10,
   message: {
     success: false,
     error: {
       code: 'RATE_LIMITED',
-      message: 'Too many login attempts. Please try again in 15 minutes.',
+      message: 'Too many login attempts. Please try again later.',
     },
   },
   standardHeaders: true,
@@ -52,13 +56,13 @@ const loginLimiter = rateLimit({
 });
 
 const registerLimiter = rateLimit({
-  windowMs: 60 * 60 * 1000, // 1 hour
-  max: 5,
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 10,
   message: {
     success: false,
     error: {
       code: 'RATE_LIMITED',
-      message: 'Too many registration attempts. Please try again later.',
+      message: 'Too many registration attempts. Please try again in 15 minutes.',
     },
   },
   standardHeaders: true,
@@ -263,6 +267,90 @@ router.get(
     const result = await LedgerService.getHistory(userId, { limit, offset });
 
     sendSuccess(res, result);
+  })
+);
+
+/**
+ * GET /auth/dashboard
+ * Aggregated wallet/profile stats for dashboard UI.
+ */
+router.get(
+  '/dashboard',
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const { userId } = getAuthUser(req);
+
+    const [predictionStats, allowanceStatus, tokenHistory, pointsHistory, achievementProgress, metrics] =
+      await Promise.all([
+        PredictionService.getUserStats(userId),
+        TokenAllowanceService.getOrCreateStatus(userId),
+        LedgerService.getHistory(userId, { limit: 5, offset: 0 }),
+        PointsLedgerService.getHistory(userId, { limit: 5, offset: 0 }),
+        AchievementService.getProgress(userId, 3),
+        AchievementService.getMetrics(userId),
+      ]);
+
+    let streak = { current: 0, longest: 0 };
+    try {
+      const rank = await LeaderboardService.getUserRank(userId, 'ALL_TIME', 'all-time');
+      streak = {
+        current: rank.currentStreak,
+        longest: rank.longestStreak,
+      };
+    } catch {
+      // No leaderboard record yet — keep zeroed streak.
+    }
+
+    const recentActivity = [
+      ...tokenHistory.transactions.map((tx) => ({
+        id: tx.id,
+        currency: 'TOKENS' as const,
+        type: tx.type,
+        amount: tx.amount,
+        balanceAfter: tx.balanceAfter,
+        description: tx.description,
+        createdAt: tx.createdAt,
+      })),
+      ...pointsHistory.transactions.map((tx) => ({
+        id: tx.id,
+        currency: 'POINTS' as const,
+        type: tx.type,
+        amount: tx.amount,
+        balanceAfter: tx.balanceAfter,
+        description: tx.description,
+        createdAt: tx.createdAt,
+      })),
+    ]
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+      .slice(0, 5);
+
+    const lastResetDate = allowanceStatus.lastResetDate;
+    const nextResetAt = new Date(
+      Date.UTC(
+        lastResetDate.getUTCFullYear(),
+        lastResetDate.getUTCMonth(),
+        lastResetDate.getUTCDate() + 1
+      )
+    );
+    const tokensToMax = Math.max(0, config.tokens.maxAllowance - allowanceStatus.tokensRemaining);
+    const daysUntilMaxStack =
+      tokensToMax === 0 ? 0 : Math.ceil(tokensToMax / config.tokens.dailyAllowance);
+
+    sendSuccess(res, {
+      predictionStats: {
+        ...predictionStats,
+        totalPointsEarned: metrics.totalPositivePoints,
+      },
+      streak,
+      recentActivity,
+      allowance: {
+        tokensRemaining: allowanceStatus.tokensRemaining,
+        lastResetDate,
+        nextResetAt,
+        daysUntilMaxStack,
+      },
+      achievementProgress: achievementProgress.next,
+    });
   })
 );
 

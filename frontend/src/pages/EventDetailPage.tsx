@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { toast } from 'sonner';
 import { z } from 'zod';
 import { api, ApiError } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
+import { useToast } from '../context/ToastContext';
 import { formatDate, formatTokens, formatPoints, getStatusColor } from '../lib/utils';
 import { Card, Badge, Button, Input, Spinner } from '../components/ui';
 import type { Event, EventStats } from '../types';
@@ -16,6 +16,7 @@ export function EventDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { user, refreshUser } = useAuth();
+  const { success: showSuccess, error: showError } = useToast();
 
   const [event, setEvent] = useState<Event | null>(null);
   const [stats, setStats] = useState<EventStats | null>(null);
@@ -25,7 +26,6 @@ export function EventDetailPage() {
   const [selectedOutcome, setSelectedOutcome] = useState<string | null>(null);
   const [stakeAmount, setStakeAmount] = useState<number | ''>( 5);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [error, setError] = useState('');
 
   useEffect(() => {
     if (id) {
@@ -64,22 +64,23 @@ export function EventDetailPage() {
 
     const parsed = stakeSchema.safeParse({ stakeAmount });
     if (!parsed.success) {
-      setError(parsed.error.issues[0]?.message ?? 'Invalid stake amount');
+      showError(parsed.error.issues[0]?.message ?? 'Invalid stake amount');
       return;
     }
 
-    setError('');
     setIsSubmitting(true);
 
     try {
-      await api.placePrediction(event.id, selectedOutcome, parsed.data.stakeAmount);
-      toast.success('Prediction placed!');
+      const result = await api.placePrediction(event.id, selectedOutcome, parsed.data.stakeAmount);
+      showSuccess('Prediction placed!');
+      for (const achievement of result.achievementsUnlocked ?? []) {
+        showSuccess(`${achievement.iconEmoji} Achievement unlocked: ${achievement.name}`);
+      }
       await refreshUser();
       navigate('/predictions');
     } catch (err) {
       const message = err instanceof ApiError ? err.message : 'Failed to place prediction';
-      setError(message);
-      toast.error(message);
+      showError(message);
     } finally {
       setIsSubmitting(false);
     }
@@ -252,12 +253,6 @@ export function EventDetailPage() {
 
             {canPredict && (
               <>
-                {error && (
-                  <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-600">
-                    {error}
-                  </div>
-                )}
-
                 {/* Outcome Selection */}
                 <div className="mb-4">
                   <label className="block text-sm font-medium text-gray-700 mb-2">

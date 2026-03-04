@@ -1,152 +1,327 @@
+import { Prisma, TransactionType as PrismaTransactionType } from '@prisma/client';
+import { randomUUID } from 'crypto';
 import { prisma } from './database.js';
+import { LedgerService } from './ledger.js';
+import { TokenAllowanceService } from './tokenAllowance.js';
 import { AppError } from '../utils/index.js';
 
-type RankedUserRow = {
+type RankedLeaderboardRow = {
   rank: number | bigint;
   userId: string;
   email: string;
-  points: number | bigint;
+  totalPredictions: number;
+  wins: number;
+  losses: number;
+  totalPointsWon: number;
+  winRate: number;
+  currentStreak: number;
+  longestStreak: number;
 };
 
-type RankedPointsRow = {
-  rank: number | bigint;
-  points: number | bigint;
+type LeaderboardPeriod = 'WEEKLY' | 'MONTHLY' | 'ALL_TIME';
+
+type LeaderboardRecord = {
+  totalPredictions: number;
+  wins: number;
+  losses: number;
+  totalPointsWon: number;
+  winRate: number;
+  currentStreak: number;
+  longestStreak: number;
 };
 
 function toNumber(value: number | bigint): number {
   return typeof value === 'bigint' ? Number(value) : value;
 }
 
-function obfuscateEmail(email: string): string {
-  const [localPart, domain] = email.split('@');
-  if (!localPart || !domain) {
-    return `${email.slice(0, 2)}***`;
-  }
-
-  const visiblePrefix = localPart.slice(0, 2);
-  const maskedLength = Math.max(1, localPart.length - visiblePrefix.length);
-  return `${visiblePrefix}${'*'.repeat(maskedLength)}@${domain}`;
+function anonymizeEmail(email: string): string {
+  const localPart = email.split('@')[0] ?? email;
+  const prefix = localPart.slice(0, 3);
+  return `${prefix}***`;
 }
 
-function toWinRate(wins: number, settled: number): number {
-  if (settled <= 0) {
+function formatIsoWeekKey(date: Date): string {
+  // ISO week-year + week number (YYYY-WXX)
+  const target = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+  const day = target.getUTCDay() || 7;
+  target.setUTCDate(target.getUTCDate() + 4 - day);
+  const yearStart = new Date(Date.UTC(target.getUTCFullYear(), 0, 1));
+  const weekNo = Math.ceil((((target.getTime() - yearStart.getTime()) / 86400000) + 1) / 7);
+  return `${target.getUTCFullYear()}-W${String(weekNo).padStart(2, '0')}`;
+}
+
+function formatMonthKey(date: Date): string {
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}`;
+}
+
+function periodKeyFor(period: LeaderboardPeriod, now = new Date()): string {
+  if (period === 'WEEKLY') {
+    return formatIsoWeekKey(now);
+  }
+  if (period === 'MONTHLY') {
+    return formatMonthKey(now);
+  }
+  return 'all-time';
+}
+
+function computeWinRate(wins: number, totalPredictions: number): number {
+  if (totalPredictions <= 0) {
     return 0;
   }
-  return Number((wins / settled).toFixed(2));
+  return Number((wins / totalPredictions).toFixed(4));
+}
+
+function streakBonusFor(streak: number): number {
+  if (streak === 10) return 10;
+  if (streak === 5) return 5;
+  if (streak === 3) return 2;
+  return 0;
+}
+
+function supportsStreakBonusType(): boolean {
+  return (Object.values(PrismaTransactionType) as string[]).includes('STREAK_BONUS');
+}
+
+async function updateLeaderboardPeriod(
+  tx: Prisma.TransactionClient,
+  userId: string,
+  period: LeaderboardPeriod,
+  won: boolean,
+  pointsWon: number,
+  now: Date
+): Promise<{ currentStreak: number }> {
+  const periodKey = periodKeyFor(period, now);
+  const [existing] = await tx.$queryRaw<Array<LeaderboardRecord>>`
+    SELECT
+      "totalPredictions",
+      "wins",
+      "losses",
+      "totalPointsWon",
+      "winRate",
+      "currentStreak",
+      "longestStreak"
+    FROM "Leaderboard"
+    WHERE "userId" = ${userId}
+      AND "period" = ${period}::"LeaderboardPeriod"
+      AND "periodKey" = ${periodKey}
+    LIMIT 1
+  `;
+
+  const totalPredictions = (existing?.totalPredictions ?? 0) + 1;
+  const wins = (existing?.wins ?? 0) + (won ? 1 : 0);
+  const losses = (existing?.losses ?? 0) + (won ? 0 : 1);
+  const totalPointsWon = (existing?.totalPointsWon ?? 0) + pointsWon;
+  const currentStreak = won ? (existing?.currentStreak ?? 0) + 1 : 0;
+  const longestStreak = Math.max(existing?.longestStreak ?? 0, currentStreak);
+  const winRate = computeWinRate(wins, totalPredictions);
+
+  await tx.$executeRaw`
+    INSERT INTO "Leaderboard" (
+      "id",
+      "userId",
+      "period",
+      "periodKey",
+      "totalPredictions",
+      "wins",
+      "losses",
+      "totalPointsWon",
+      "winRate",
+      "currentStreak",
+      "longestStreak",
+      "updatedAt"
+    )
+    VALUES (
+      ${randomUUID()},
+      ${userId},
+      ${period}::"LeaderboardPeriod",
+      ${periodKey},
+      ${totalPredictions},
+      ${wins},
+      ${losses},
+      ${totalPointsWon},
+      ${winRate},
+      ${currentStreak},
+      ${longestStreak},
+      NOW()
+    )
+    ON CONFLICT ("userId", "period", "periodKey")
+    DO UPDATE SET
+      "totalPredictions" = EXCLUDED."totalPredictions",
+      "wins" = EXCLUDED."wins",
+      "losses" = EXCLUDED."losses",
+      "totalPointsWon" = EXCLUDED."totalPointsWon",
+      "winRate" = EXCLUDED."winRate",
+      "currentStreak" = EXCLUDED."currentStreak",
+      "longestStreak" = EXCLUDED."longestStreak",
+      "updatedAt" = NOW()
+  `;
+
+  return { currentStreak };
 }
 
 export const LeaderboardService = {
-  async getLeaderboard(userId: string, requestedLimit = 50) {
+  async updateAfterSettlement(
+    userId: string,
+    won: boolean,
+    pointsWon: number,
+    tx?: Prisma.TransactionClient
+  ): Promise<{ bonusAwarded: number; streak: number }> {
+    const work = async (client: Prisma.TransactionClient) => {
+      const now = new Date();
+      const periods: LeaderboardPeriod[] = ['WEEKLY', 'MONTHLY', 'ALL_TIME'];
+
+      let allTimeStreak = 0;
+      for (const period of periods) {
+        const updated = await updateLeaderboardPeriod(client, userId, period, won, pointsWon, now);
+        if (period === 'ALL_TIME') {
+          allTimeStreak = updated.currentStreak;
+        }
+      }
+
+      const bonusAwarded = won ? streakBonusFor(allTimeStreak) : 0;
+      if (bonusAwarded > 0) {
+        const ledgerType = supportsStreakBonusType() ? 'STREAK_BONUS' : 'ADMIN_CREDIT';
+        await LedgerService.credit(
+          {
+            userId,
+            amount: bonusAwarded,
+            type: ledgerType as never,
+            description: `${allTimeStreak}-win streak bonus!`,
+          },
+          client
+        );
+        await TokenAllowanceService.syncToLedgerBalance(userId, client);
+      }
+
+      return { bonusAwarded, streak: allTimeStreak };
+    };
+
+    if (tx) {
+      return work(tx);
+    }
+
+    return prisma.$transaction(work);
+  },
+
+  async getLeaderboard(
+    period: LeaderboardPeriod,
+    periodKey = periodKeyFor(period),
+    requestedLimit = 20,
+    currentUserId?: string
+  ) {
     const limit = Math.min(Math.max(requestedLimit, 1), 100);
 
-    const rankedUsers = await prisma.$queryRaw<Array<RankedUserRow>>`
+    const rows = await prisma.$queryRaw<Array<RankedLeaderboardRow>>`
       WITH ranked AS (
         SELECT
-          "id" AS "userId",
-          "email",
-          "pointsBalance" AS "points",
+          lb."userId",
+          u."email",
+          lb."totalPredictions",
+          lb."wins",
+          lb."losses",
+          lb."totalPointsWon",
+          lb."winRate",
+          lb."currentStreak",
+          lb."longestStreak",
           ROW_NUMBER() OVER (
-            ORDER BY "pointsBalance" DESC, "createdAt" ASC, "id" ASC
+            ORDER BY
+              lb."totalPointsWon" DESC,
+              lb."wins" DESC,
+              lb."winRate" DESC,
+              lb."userId" ASC
           ) AS "rank"
-        FROM "User"
+        FROM "Leaderboard" lb
+        INNER JOIN "User" u ON u."id" = lb."userId"
+        WHERE lb."period" = ${period}::"LeaderboardPeriod"
+          AND lb."periodKey" = ${periodKey}
       )
-      SELECT "rank", "userId", "email", "points"
+      SELECT *
       FROM ranked
       ORDER BY "rank"
       LIMIT ${limit}
     `;
 
-    const topUserIds = rankedUsers.map((row) => row.userId);
-    const [winsByUser, settledByUser] = topUserIds.length
-      ? await Promise.all([
-          prisma.prediction.groupBy({
-            by: ['userId'],
-            where: {
-              userId: { in: topUserIds },
-              status: 'WON',
-            },
-            _count: { _all: true },
-          }),
-          prisma.prediction.groupBy({
-            by: ['userId'],
-            where: {
-              userId: { in: topUserIds },
-              status: { in: ['WON', 'LOST'] },
-            },
-            _count: { _all: true },
-          }),
-        ])
-      : [[], []];
+    const leaderboard = rows.map((row) => ({
+      rank: toNumber(row.rank),
+      userId: row.userId,
+      displayName: anonymizeEmail(row.email),
+      totalPredictions: row.totalPredictions,
+      wins: row.wins,
+      losses: row.losses,
+      totalPointsWon: row.totalPointsWon,
+      winRate: row.winRate,
+      currentStreak: row.currentStreak,
+      longestStreak: row.longestStreak,
+    }));
 
-    const winsMap = new Map(winsByUser.map((row) => [row.userId, row._count._all]));
-    const settledMap = new Map(settledByUser.map((row) => [row.userId, row._count._all]));
+    const userRank = currentUserId
+      ? await this.getUserRank(currentUserId, period, periodKey)
+      : null;
 
-    const leaderboard = rankedUsers.map((row) => {
-      const wins = winsMap.get(row.userId) ?? 0;
-      const settled = settledMap.get(row.userId) ?? 0;
+    return {
+      period,
+      periodKey,
+      leaderboard,
+      userRank,
+    };
+  },
 
-      return {
-        rank: toNumber(row.rank),
-        userId: row.userId,
-        displayName: obfuscateEmail(row.email),
-        points: toNumber(row.points),
-        predictionsWon: wins,
-        winRate: toWinRate(wins, settled),
-      };
-    });
-
-    const [currentUserRank] = await prisma.$queryRaw<Array<RankedPointsRow>>`
+  async getUserRank(
+    userId: string,
+    period: LeaderboardPeriod,
+    periodKey = periodKeyFor(period)
+  ) {
+    const [row] = await prisma.$queryRaw<Array<RankedLeaderboardRow>>`
       WITH ranked AS (
         SELECT
-          "id" AS "userId",
-          "pointsBalance" AS "points",
+          lb."userId",
+          u."email",
+          lb."totalPredictions",
+          lb."wins",
+          lb."losses",
+          lb."totalPointsWon",
+          lb."winRate",
+          lb."currentStreak",
+          lb."longestStreak",
           ROW_NUMBER() OVER (
-            ORDER BY "pointsBalance" DESC, "createdAt" ASC, "id" ASC
+            ORDER BY
+              lb."totalPointsWon" DESC,
+              lb."wins" DESC,
+              lb."winRate" DESC,
+              lb."userId" ASC
           ) AS "rank"
-        FROM "User"
+        FROM "Leaderboard" lb
+        INNER JOIN "User" u ON u."id" = lb."userId"
+        WHERE lb."period" = ${period}::"LeaderboardPeriod"
+          AND lb."periodKey" = ${periodKey}
       )
-      SELECT "rank", "points"
+      SELECT *
       FROM ranked
       WHERE "userId" = ${userId}
       LIMIT 1
     `;
 
-    if (!currentUserRank) {
-      throw AppError.notFound('User');
-    }
-
-    const userRankValue = toNumber(currentUserRank.rank);
-    const userPoints = toNumber(currentUserRank.points);
-    let pointsToNextRank = 0;
-
-    if (userRankValue > 1) {
-      const [nextRankUser] = await prisma.$queryRaw<Array<{ points: number | bigint }>>`
-        WITH ranked AS (
-          SELECT
-            "id" AS "userId",
-            "pointsBalance" AS "points",
-            ROW_NUMBER() OVER (
-              ORDER BY "pointsBalance" DESC, "createdAt" ASC, "id" ASC
-            ) AS "rank"
-          FROM "User"
-        )
-        SELECT "points"
-        FROM ranked
-        WHERE "rank" = ${userRankValue - 1}
-        LIMIT 1
-      `;
-
-      const pointsAbove = nextRankUser ? toNumber(nextRankUser.points) : userPoints;
-      pointsToNextRank = Math.max(0, pointsAbove - userPoints);
+    if (!row) {
+      throw AppError.notFound('Leaderboard entry');
     }
 
     return {
-      leaderboard,
-      userRank: {
-        rank: userRankValue,
-        points: userPoints,
-        pointsToNextRank,
-      },
+      rank: toNumber(row.rank),
+      userId: row.userId,
+      displayName: anonymizeEmail(row.email),
+      totalPredictions: row.totalPredictions,
+      wins: row.wins,
+      losses: row.losses,
+      totalPointsWon: row.totalPointsWon,
+      winRate: row.winRate,
+      currentStreak: row.currentStreak,
+      longestStreak: row.longestStreak,
+      period,
+      periodKey,
     };
+  },
+
+  getCurrentPeriodKey(period: LeaderboardPeriod) {
+    return periodKeyFor(period);
   },
 };

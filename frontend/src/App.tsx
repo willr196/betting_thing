@@ -1,6 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import { Toaster } from 'sonner';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { ToastProvider } from './context/ToastContext';
 import { Layout } from './components/Layout';
 import { Spinner } from './components/ui';
 import { ErrorBoundary } from './components/ErrorBoundary';
@@ -10,7 +10,9 @@ import {
   EventsPage,
   EventDetailPage,
   PredictionsPage,
+  LeaderboardPage,
   RewardsPage,
+  TransactionsPage,
   WalletPage,
 } from './pages';
 
@@ -101,7 +103,9 @@ function AppRoutes() {
         <Route path="events" element={<ErrorBoundary><EventsPage /></ErrorBoundary>} />
         <Route path="events/:id" element={<ErrorBoundary><EventDetailPage /></ErrorBoundary>} />
         <Route path="predictions" element={<ErrorBoundary><PredictionsPage /></ErrorBoundary>} />
+        <Route path="leaderboard" element={<ErrorBoundary><LeaderboardPage /></ErrorBoundary>} />
         <Route path="rewards" element={<ErrorBoundary><RewardsPage /></ErrorBoundary>} />
+        <Route path="transactions" element={<ErrorBoundary><TransactionsPage /></ErrorBoundary>} />
         <Route path="wallet" element={<ErrorBoundary><WalletPage /></ErrorBoundary>} />
       </Route>
 
@@ -119,10 +123,11 @@ export default function App() {
   return (
     <BrowserRouter>
       <ErrorBoundary>
-        <AuthProvider>
-          <AppRoutes />
-          <Toaster position="top-right" richColors closeButton />
-        </AuthProvider>
+        <ToastProvider>
+          <AuthProvider>
+            <AppRoutes />
+          </AuthProvider>
+        </ToastProvider>
       </ErrorBoundary>
     </BrowserRouter>
   );

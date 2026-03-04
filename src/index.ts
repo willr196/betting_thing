@@ -1,15 +1,48 @@
 import { app } from './app.js';
 import { config } from './config/index.js';
-import { connectDatabase, disconnectDatabase } from './services/database.js';
+import { connectDatabase, disconnectDatabase, prisma } from './services/database.js';
 import { OddsSyncService } from './services/oddsSync.js';
 import { SettlementWorker } from './services/settlementWorker.js';
 import { EventImportService } from './services/eventImport.js';
 import { EventService } from './services/events.js';
+import { OddsApiService } from './services/oddsApi.js';
 import { logger } from './logger.js';
 
 // =============================================================================
 // SERVER STARTUP
 // =============================================================================
+
+async function runStartupAutoImport() {
+  const openEvents = await prisma.event.count({
+    where: { status: 'OPEN' },
+  });
+
+  if (openEvents >= 5) {
+    logger.info({ openEvents }, '[Startup] Skipping auto-import, sufficient OPEN events');
+    return;
+  }
+
+  if (OddsApiService.shouldPauseNonEssentialPolling()) {
+    const quota = OddsApiService.getQuotaStatus();
+    logger.warn(
+      {
+        openEvents,
+        remainingRequests: quota.remainingRequests,
+        monthlyQuota: quota.monthlyQuota,
+      },
+      '[Startup] Skipping auto-import due to low quota'
+    );
+    return;
+  }
+
+  const sports = config.oddsApi.autoImportSports;
+  const importResult = await EventImportService.runOnce(sports);
+
+  logger.info(
+    { openEvents, sports, ...importResult },
+    '[Startup] Auto-imported events'
+  );
+}
 
 async function start(): Promise<void> {
   try {
@@ -26,13 +59,32 @@ async function start(): Promise<void> {
 
     let oddsSyncInterval: ReturnType<typeof setInterval> | undefined;
     let settlementInterval: ReturnType<typeof setInterval> | undefined;
-    let autoLockInterval: ReturnType<typeof setInterval> | undefined;
     let eventImportInterval: ReturnType<typeof setInterval> | undefined;
 
     if (!config.isTest) {
-      // Run initial event import on startup (non-blocking)
-      EventImportService.runOnce().catch((error) => {
-        logger.error({ err: error }, 'Initial event import failed');
+      // Auto-lock and cleanup lifecycle on startup.
+      EventService.autoLockStartedEvents().then((locked) => {
+        if (locked > 0) {
+          logger.info({ locked }, '[Startup] Auto-locked started events');
+        }
+      }).catch((error) => {
+        logger.error({ err: error }, '[Startup] Auto-lock failed');
+      });
+
+      EventService.cleanupStaleUnpredictedEvents('system').then((cancelled) => {
+        if (cancelled > 0) {
+          logger.info(
+            { cancelled },
+            '[Startup] Cancelled stale events with no predictions'
+          );
+        }
+      }).catch((error) => {
+        logger.error({ err: error }, '[Startup] Stale-event cleanup failed');
+      });
+
+      // Auto-import on startup only when OPEN inventory is low and quota allows.
+      runStartupAutoImport().catch((error) => {
+        logger.error({ err: error }, 'Startup auto-import failed');
       });
 
       oddsSyncInterval = setInterval(async () => {
@@ -51,18 +103,6 @@ async function start(): Promise<void> {
         }
       }, config.oddsApi.settlementIntervalSeconds * 1000);
 
-      // Auto-lock events that have started (check every minute)
-      autoLockInterval = setInterval(async () => {
-        try {
-          const count = await EventService.autoLockStartedEvents();
-          if (count > 0) {
-            logger.info({ count }, 'Auto-locked started events');
-          }
-        } catch (error) {
-          logger.error({ err: error }, 'Auto-lock failed');
-        }
-      }, 60_000);
-
       // Re-import events from The Odds API on a configurable interval (default 6h)
       eventImportInterval = setInterval(async () => {
         try {
@@ -79,7 +119,6 @@ async function start(): Promise<void> {
 
       if (oddsSyncInterval) clearInterval(oddsSyncInterval);
       if (settlementInterval) clearInterval(settlementInterval);
-      if (autoLockInterval) clearInterval(autoLockInterval);
       if (eventImportInterval) clearInterval(eventImportInterval);
 
       server.close(async () => {

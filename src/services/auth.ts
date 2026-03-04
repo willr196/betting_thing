@@ -127,9 +127,21 @@ export const AuthService = {
         throw new AppError('RATE_LIMITED', getLockoutMessage(remainingMinutes), 429);
       }
 
+      let failedAttempts = lockedUser.failedLoginAttempts;
+      if (lockedUser.loginLockoutUntil && lockedUser.loginLockoutUntil <= now) {
+        await tx.user.update({
+          where: { id: lockedUser.id },
+          data: {
+            failedLoginAttempts: 0,
+            loginLockoutUntil: null,
+          },
+        });
+        failedAttempts = 0;
+      }
+
       const isValidPassword = await bcrypt.compare(password, lockedUser.passwordHash);
       if (!isValidPassword) {
-        const nextFailedAttempts = lockedUser.failedLoginAttempts + 1;
+        const nextFailedAttempts = failedAttempts + 1;
         const maxAttempts = config.auth.loginLockout.maxAttempts;
 
         if (nextFailedAttempts >= maxAttempts) {
@@ -139,7 +151,7 @@ export const AuthService = {
           await tx.user.update({
             where: { id: lockedUser.id },
             data: {
-              failedLoginAttempts: 0,
+              failedLoginAttempts: nextFailedAttempts,
               loginLockoutUntil: lockoutUntil,
             },
           });
@@ -158,7 +170,7 @@ export const AuthService = {
         throw new AppError('INVALID_CREDENTIALS', 'Invalid email or password', 401);
       }
 
-      if (lockedUser.failedLoginAttempts > 0 || lockedUser.loginLockoutUntil) {
+      if (failedAttempts > 0 || lockedUser.loginLockoutUntil) {
         await tx.user.update({
           where: { id: lockedUser.id },
           data: {

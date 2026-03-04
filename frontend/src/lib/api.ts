@@ -6,6 +6,11 @@ import type {
   EventStats,
   Prediction,
   PredictionStats,
+  LeaderboardEntry,
+  LeaderboardPeriod,
+  Achievement,
+  AchievementUnlocked,
+  DashboardStats,
   TokenTransaction,
   PointsTransaction,
   TokenAllowance,
@@ -208,6 +213,10 @@ class ApiClient {
     return this.request<{ balance: number; verified: boolean }>('/auth/balance');
   }
 
+  async getDashboardStats(): Promise<DashboardStats> {
+    return this.request<DashboardStats>('/auth/dashboard');
+  }
+
   async getTransactions(
     limit = 50,
     offset = 0
@@ -282,8 +291,8 @@ class ApiClient {
     eventId: string,
     predictedOutcome: string,
     stakeAmount: number
-  ): Promise<{ prediction: Prediction }> {
-    return this.request<{ prediction: Prediction }>('/predictions', {
+  ): Promise<{ prediction: Prediction; achievementsUnlocked?: AchievementUnlocked[] }> {
+    return this.request<{ prediction: Prediction; achievementsUnlocked?: AchievementUnlocked[] }>('/predictions', {
       method: 'POST',
       body: JSON.stringify({ eventId, predictedOutcome, stakeAmount }),
     });
@@ -318,10 +327,39 @@ class ApiClient {
     return this.request(`/predictions/${predictionId}/cashout-value`);
   }
 
-  async cashoutPrediction(predictionId: string): Promise<{ prediction: Prediction }> {
-    return this.request<{ prediction: Prediction }>(`/predictions/${predictionId}/cashout`, {
+  async cashoutPrediction(
+    predictionId: string
+  ): Promise<{ prediction: Prediction; achievementsUnlocked?: AchievementUnlocked[] }> {
+    return this.request<{ prediction: Prediction; achievementsUnlocked?: AchievementUnlocked[] }>(`/predictions/${predictionId}/cashout`, {
       method: 'POST',
     });
+  }
+
+  // ===========================================================================
+  // LEADERBOARD
+  // ===========================================================================
+
+  async getLeaderboard(
+    period: LeaderboardPeriod,
+    limit = 20
+  ): Promise<{
+    period: 'WEEKLY' | 'MONTHLY' | 'ALL_TIME';
+    periodKey: string;
+    leaderboard: LeaderboardEntry[];
+    userRank: LeaderboardEntry | null;
+  }> {
+    const searchParams = new URLSearchParams({
+      period,
+      limit: String(limit),
+    });
+    return this.request(`/leaderboard?${searchParams.toString()}`);
+  }
+
+  async getMyLeaderboardRank(
+    period: LeaderboardPeriod
+  ): Promise<{ rank: LeaderboardEntry }> {
+    const searchParams = new URLSearchParams({ period });
+    return this.request(`/leaderboard/me?${searchParams.toString()}`);
   }
 
   // ===========================================================================
@@ -337,8 +375,10 @@ class ApiClient {
     );
   }
 
-  async redeemReward(rewardId: string): Promise<{ redemption: Redemption }> {
-    return this.request<{ redemption: Redemption }>(`/rewards/${rewardId}/redeem`, {
+  async redeemReward(
+    rewardId: string
+  ): Promise<{ redemption: Redemption; achievementsUnlocked?: AchievementUnlocked[] }> {
+    return this.request<{ redemption: Redemption; achievementsUnlocked?: AchievementUnlocked[] }>(`/rewards/${rewardId}/redeem`, {
       method: 'POST',
     });
   }
@@ -357,6 +397,22 @@ class ApiClient {
     return this.request<{ redemptions: Redemption[]; total: number }>(
       `/rewards/redemptions${query ? `?${query}` : ''}`
     );
+  }
+
+  // ===========================================================================
+  // ACHIEVEMENTS
+  // ===========================================================================
+
+  async getAchievements(): Promise<{ achievements: Achievement[] }> {
+    return this.request<{ achievements: Achievement[] }>('/achievements');
+  }
+
+  async getUnlockedAchievements(): Promise<{ achievements: Achievement[] }> {
+    return this.request<{ achievements: Achievement[] }>('/achievements/me');
+  }
+
+  async getAchievementProgress(limit = 3): Promise<{ next: Achievement[] }> {
+    return this.request<{ next: Achievement[] }>(`/achievements/progress?limit=${limit}`);
   }
 }
 

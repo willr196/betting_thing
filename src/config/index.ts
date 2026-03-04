@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import dotenv from 'dotenv';
+import { logger } from '../logger.js';
 
 // Keep platform-injected vars authoritative while still supporting local `.env` files.
 if (process.env.NODE_ENV !== 'production') {
@@ -81,33 +82,39 @@ const envSchema = z.object({
   // Rate Limiting
   RATE_LIMIT_MAX: z.coerce.number().default(100),
   RATE_LIMIT_WINDOW_MINUTES: z.coerce.number().default(15),
-  LOGIN_LOCKOUT_MAX_ATTEMPTS: z.coerce.number().int().min(1).default(10),
-  LOGIN_LOCKOUT_WINDOW_MINUTES: z.coerce.number().int().min(1).default(30),
+  LOGIN_LOCKOUT_MAX_ATTEMPTS: z.coerce.number().int().min(1).default(5),
+  LOGIN_LOCKOUT_WINDOW_MINUTES: z.coerce.number().int().min(1).default(15),
 
   // The Odds API
   THE_ODDS_API_KEY: z.string().min(1, 'THE_ODDS_API_KEY is required'),
   THE_ODDS_API_REGIONS: z.string().default('uk'),
   THE_ODDS_API_MARKETS: z.string().default('h2h'),
   THE_ODDS_API_BASE_URL: z.string().url().default('https://api.the-odds-api.com/v4'),
-  ODDS_SYNC_INTERVAL_SECONDS: z.coerce.number().min(30).default(300),
-  SETTLEMENT_INTERVAL_SECONDS: z.coerce.number().min(30).default(300),
+  ODDS_SYNC_INTERVAL_SECONDS: z.coerce.number().min(30).default(900),
+  SETTLEMENT_INTERVAL_SECONDS: z.coerce.number().min(30).default(900),
+  ODDS_SYNC_LOOKAHEAD_HOURS: z.coerce.number().int().min(1).default(48),
+  ODDS_CACHE_TTL_SECONDS: z.coerce.number().int().min(1).default(300),
+  ODDS_SCORES_CACHE_TTL_SECONDS: z.coerce.number().int().min(1).default(120),
+  ODDS_STALENESS_THRESHOLD_MINUTES: z.coerce.number().int().min(1).default(30),
+  ODDS_API_MONTHLY_QUOTA: z.coerce.number().int().min(1).default(500),
   EVENT_IMPORT_INTERVAL_SECONDS: z.coerce.number().min(60).default(21600),
+  AUTO_IMPORT_SPORTS: z.string().default('soccer_epl'),
   CASHOUT_STALENESS_THRESHOLD_MS: z.coerce.number().int().min(1).default(300000),
+  CASHOUT_ODDS_DRIFT_THRESHOLD_PERCENT: z.coerce.number().min(0).max(100).default(5),
 });
 
 // Parse and validate environment
 const parseResult = envSchema.safeParse(normalizedEnv);
 
 if (!parseResult.success) {
-  console.error('❌ Invalid environment variables:');
-  console.error(parseResult.error.format());
+  logger.fatal({ errors: parseResult.error.format() }, 'Invalid environment variables');
   process.exit(1);
 }
 
 const env = parseResult.data;
 
 if (env.NODE_ENV === 'production' && !env.FRONTEND_URL) {
-  console.error('❌ FRONTEND_URL is required when NODE_ENV=production');
+  logger.fatal('FRONTEND_URL is required when NODE_ENV=production');
   process.exit(1);
 }
 
@@ -119,9 +126,8 @@ const PLACEHOLDER_JWT_PATTERNS = [
 if (env.NODE_ENV === 'production') {
   const jwtLower = env.JWT_SECRET.toLowerCase();
   if (PLACEHOLDER_JWT_PATTERNS.some((p) => jwtLower.includes(p))) {
-    console.error(
-      '❌ JWT_SECRET appears to be a placeholder value. ' +
-      'Generate a secure secret with: openssl rand -base64 48'
+    logger.fatal(
+      'JWT_SECRET appears to be a placeholder value. Generate a secure secret with: openssl rand -base64 48'
     );
     process.exit(1);
   }
@@ -185,10 +191,19 @@ export const config = {
     baseUrl: env.THE_ODDS_API_BASE_URL,
     syncIntervalSeconds: env.ODDS_SYNC_INTERVAL_SECONDS,
     settlementIntervalSeconds: env.SETTLEMENT_INTERVAL_SECONDS,
+    syncLookaheadHours: env.ODDS_SYNC_LOOKAHEAD_HOURS,
+    cacheTtlMs: env.ODDS_CACHE_TTL_SECONDS * 1000,
+    scoresCacheTtlMs: env.ODDS_SCORES_CACHE_TTL_SECONDS * 1000,
+    stalenessThresholdMs: env.ODDS_STALENESS_THRESHOLD_MINUTES * 60 * 1000,
+    monthlyQuota: env.ODDS_API_MONTHLY_QUOTA,
     importIntervalSeconds: env.EVENT_IMPORT_INTERVAL_SECONDS,
+    autoImportSports: env.AUTO_IMPORT_SPORTS.split(',')
+      .map((sport) => sport.trim())
+      .filter((sport) => sport.length > 0),
   },
   cashout: {
     stalenessThresholdMs: env.CASHOUT_STALENESS_THRESHOLD_MS,
+    oddsDriftThresholdPercent: env.CASHOUT_ODDS_DRIFT_THRESHOLD_PERCENT,
   },
 } as const;
 

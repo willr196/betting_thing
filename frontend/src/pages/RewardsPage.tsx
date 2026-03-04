@@ -1,13 +1,14 @@
 import { useState, useEffect } from 'react';
-import { toast } from 'sonner';
 import { api, ApiError } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
+import { useToast } from '../context/ToastContext';
 import { formatPoints, getStatusColor, formatDate } from '../lib/utils';
 import { Card, Badge, Button, Spinner, EmptyState } from '../components/ui';
 import type { Reward, Redemption } from '../types';
 
 export function RewardsPage() {
   const { user, refreshUser } = useAuth();
+  const { success: showSuccess, error: showError } = useToast();
   const [rewards, setRewards] = useState<Reward[]>([]);
   const [redemptions, setRedemptions] = useState<Redemption[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -31,7 +32,7 @@ export function RewardsPage() {
       setRedemptions(redemptionsData.redemptions);
     } catch (err) {
       setLoadError('Failed to load rewards. Please try again.');
-      toast.error('Failed to load rewards');
+      showError('Failed to load rewards');
       console.error('Failed to load rewards:', err);
     } finally {
       setIsLoading(false);
@@ -40,19 +41,22 @@ export function RewardsPage() {
 
   const handleRedeem = async (reward: Reward) => {
     if ((user?.pointsBalance ?? 0) < reward.pointsCost) {
-      toast.error('Insufficient points balance');
+      showError('Insufficient points balance');
       return;
     }
 
     setRedeemingId(reward.id);
 
     try {
-      await api.redeemReward(reward.id);
-      toast.success(`Successfully redeemed ${reward.name}!`);
+      const result = await api.redeemReward(reward.id);
+      showSuccess(`Successfully redeemed ${reward.name}!`);
+      for (const achievement of result.achievementsUnlocked ?? []) {
+        showSuccess(`${achievement.iconEmoji} Achievement unlocked: ${achievement.name}`);
+      }
       await Promise.all([refreshUser(), loadData()]);
     } catch (err) {
       const message = err instanceof ApiError ? err.message : 'Failed to redeem reward';
-      toast.error(message);
+      showError(message);
     } finally {
       setRedeemingId(null);
     }

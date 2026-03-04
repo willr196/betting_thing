@@ -1,19 +1,25 @@
 import { useState, useEffect } from 'react';
-import { toast } from 'sonner';
 import { api } from '../lib/api';
-import { useAuth } from '../context/AuthContext';
+import { useToast } from '../context/ToastContext';
 import {
   formatTokens,
   formatPoints,
   formatDate,
+  formatRelativeTime,
   getTransactionColor,
   getTransactionLabel,
 } from '../lib/utils';
 import { Card, Spinner, EmptyState } from '../components/ui';
-import type { TokenAllowance, TokenTransaction, PointsTransaction } from '../types';
+import type {
+  TokenAllowance,
+  TokenTransaction,
+  PointsTransaction,
+  DashboardStats,
+  Achievement,
+} from '../types';
 
 export function WalletPage() {
-  const { } = useAuth();
+  const { error: showError } = useToast();
   const PAGE_SIZE = 20;
 
   const [activeTab, setActiveTab] = useState<'tokens' | 'points'>('tokens');
@@ -38,6 +44,8 @@ export function WalletPage() {
   const [allowance, setAllowance] = useState<TokenAllowance | null>(null);
   const [pointsBalance, setPointsBalance] = useState(0);
   const [tokenBalance, setTokenBalance] = useState(0);
+  const [dashboard, setDashboard] = useState<DashboardStats | null>(null);
+  const [achievements, setAchievements] = useState<Achievement[]>([]);
   const [error, setError] = useState('');
 
   useEffect(() => {
@@ -55,15 +63,19 @@ export function WalletPage() {
     setIsLoading(true);
     setError('');
     try {
-      const [tokenStatus, points, data] = await Promise.all([
+      const [tokenStatus, points, data, dashboardStats, achievementsData] = await Promise.all([
         api.getTokenAllowance(),
         api.getPointsBalance(),
         api.getTransactions(PAGE_SIZE, 0),
+        api.getDashboardStats(),
+        api.getAchievements(),
       ]);
 
       setAllowance(tokenStatus.allowance);
       setTokenBalance(tokenStatus.balance);
       setPointsBalance(points.balance);
+      setDashboard(dashboardStats);
+      setAchievements(achievementsData.achievements);
 
       setTransactions(data.transactions);
       setTokenTotal(data.total);
@@ -71,7 +83,7 @@ export function WalletPage() {
       setTokenHasMore(data.transactions.length < data.total);
     } catch (err) {
       setError('Failed to load wallet data. Please try again.');
-      toast.error('Failed to load wallet data');
+      showError('Failed to load wallet data');
       console.error('Failed to load transactions:', err);
     } finally {
       setIsLoading(false);
@@ -86,6 +98,7 @@ export function WalletPage() {
       setTokenOffset((prev) => prev + PAGE_SIZE);
       setTokenHasMore(transactions.length + data.transactions.length < data.total);
     } catch (err) {
+      showError('Failed to load more token transactions');
       console.error('Failed to load more transactions:', err);
     } finally {
       setIsLoadingMore(false);
@@ -101,7 +114,7 @@ export function WalletPage() {
       setPointsOffset(PAGE_SIZE);
       setPointsHasMore(data.transactions.length < data.total);
     } catch (err) {
-      toast.error('Failed to load points history');
+      showError('Failed to load points history');
       console.error('Failed to load points transactions:', err);
     } finally {
       setIsPointsLoading(false);
@@ -116,6 +129,7 @@ export function WalletPage() {
       setPointsOffset((prev) => prev + PAGE_SIZE);
       setPointsHasMore(pointsTransactions.length + data.transactions.length < data.total);
     } catch (err) {
+      showError('Failed to load more points transactions');
       console.error('Failed to load more points transactions:', err);
     } finally {
       setIsLoadingMorePoints(false);
@@ -154,10 +168,15 @@ export function WalletPage() {
               {formatTokens(tokenBalance)}
             </p>
             <p className="text-white/80">tokens</p>
-            {allowance && (
-              <p className="text-xs text-white/80 mt-2">
-                Resets: {formatDate(allowance.lastResetDate)}
-              </p>
+            {dashboard && (
+              <>
+                <p className="mt-2 text-xs text-white/80">
+                  Next reset: {formatDate(dashboard.allowance.nextResetAt)}
+                </p>
+                <p className="text-xs text-white/80">
+                  Days to max stack: {dashboard.allowance.daysUntilMaxStack}
+                </p>
+              </>
             )}
           </div>
         </Card>
@@ -189,6 +208,159 @@ export function WalletPage() {
           </p>
         </Card>
       </div>
+
+      {dashboard && (
+        <>
+          <div className="grid gap-4 mb-6 sm:grid-cols-2 lg:grid-cols-4">
+            <Card>
+              <p className="text-sm text-gray-500">Total Predictions</p>
+              <p className="text-2xl font-semibold text-gray-900">
+                {dashboard.predictionStats.total}
+              </p>
+            </Card>
+            <Card>
+              <p className="text-sm text-gray-500">Wins / Losses</p>
+              <p className="text-2xl font-semibold text-gray-900">
+                {dashboard.predictionStats.won}/{dashboard.predictionStats.lost}
+              </p>
+            </Card>
+            <Card>
+              <p className="text-sm text-gray-500">Win Rate</p>
+              <p className="text-2xl font-semibold text-emerald-700">
+                {dashboard.predictionStats.winRate.toFixed(1)}%
+              </p>
+            </Card>
+            <Card>
+              <p className="text-sm text-gray-500">Total Points Earned</p>
+              <p className="text-2xl font-semibold text-primary-700">
+                {formatPoints(dashboard.predictionStats.totalPointsEarned)}
+              </p>
+            </Card>
+          </div>
+
+          <div className="grid gap-4 mb-6 lg:grid-cols-2">
+            <Card>
+              <h2 className="mb-3 font-semibold text-gray-900">Streak</h2>
+              <p
+                className={`text-3xl font-bold ${
+                  dashboard.streak.current >= 3 ? 'text-amber-600 animate-pulse' : 'text-gray-900'
+                }`}
+              >
+                🔥 {dashboard.streak.current}
+              </p>
+              <p className="mt-2 text-sm text-gray-600">
+                Longest streak: {dashboard.streak.longest}
+              </p>
+            </Card>
+
+            <Card>
+              <h2 className="mb-3 font-semibold text-gray-900">Recent Activity</h2>
+              {dashboard.recentActivity.length === 0 ? (
+                <p className="text-sm text-gray-500">No recent activity yet.</p>
+              ) : (
+                <div className="space-y-2">
+                  {dashboard.recentActivity.map((activity) => (
+                    <div key={`${activity.currency}-${activity.id}`} className="flex items-center justify-between text-sm">
+                      <div>
+                        <p className="font-medium text-gray-800">
+                          {activity.currency === 'TOKENS' ? '🪙' : '🏆'} {getTransactionLabel(activity.type)}
+                        </p>
+                        <p className="text-xs text-gray-500">{formatRelativeTime(activity.createdAt)}</p>
+                      </div>
+                      <p className={getTransactionColor(activity.amount)}>
+                        {activity.amount > 0 ? '+' : ''}
+                        {activity.currency === 'TOKENS'
+                          ? formatTokens(activity.amount)
+                          : formatPoints(activity.amount)}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </Card>
+          </div>
+
+          <div className="grid gap-4 mb-6 lg:grid-cols-2">
+            <Card>
+              <h2 className="mb-4 font-semibold text-gray-900">Closest Achievements</h2>
+              {dashboard.achievementProgress.length === 0 ? (
+                <p className="text-sm text-gray-500">All achievements unlocked.</p>
+              ) : (
+                <div className="space-y-3">
+                  {dashboard.achievementProgress.map((item) => (
+                    <div key={item.key}>
+                      <div className="mb-1 flex items-center justify-between text-sm">
+                        <p className="font-medium text-gray-800">
+                          {item.iconEmoji} {item.name}
+                        </p>
+                        <p className="text-gray-500">
+                          {item.currentValue}/{item.threshold}
+                        </p>
+                      </div>
+                      <div className="h-2 overflow-hidden rounded-full bg-gray-100">
+                        <div
+                          className="h-full rounded-full bg-primary-500"
+                          style={{ width: `${item.progress}%` }}
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </Card>
+
+            <Card>
+              <h2 className="mb-4 font-semibold text-gray-900">Daily Allowance Status</h2>
+              <div className="space-y-2 text-sm">
+                <p className="text-gray-700">
+                  Tokens remaining: <span className="font-semibold">{allowance?.tokensRemaining ?? 0}</span>
+                </p>
+                <p className="text-gray-700">
+                  Next reset: <span className="font-semibold">{formatDate(dashboard.allowance.nextResetAt)}</span>
+                </p>
+                <p className="text-gray-700">
+                  Days until max stack: <span className="font-semibold">{dashboard.allowance.daysUntilMaxStack}</span>
+                </p>
+              </div>
+            </Card>
+          </div>
+        </>
+      )}
+
+      <Card className="mb-6">
+        <h2 className="mb-4 font-semibold text-gray-900">Achievements</h2>
+        {achievements.length === 0 ? (
+          <p className="text-sm text-gray-500">No achievements yet.</p>
+        ) : (
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {achievements.map((achievement) => {
+              const unlocked = Boolean(achievement.unlockedAt);
+              return (
+                <div
+                  key={achievement.key}
+                  className={`rounded-lg border p-3 ${
+                    unlocked ? 'border-emerald-200 bg-emerald-50' : 'border-gray-200 bg-gray-50'
+                  }`}
+                >
+                  <p className="font-medium text-gray-900">
+                    {achievement.iconEmoji} {achievement.name}
+                  </p>
+                  <p className="mt-1 text-xs text-gray-600">{achievement.description}</p>
+                  {unlocked ? (
+                    <p className="mt-2 text-xs font-medium text-emerald-700">
+                      Unlocked {formatDate(achievement.unlockedAt as string)}
+                    </p>
+                  ) : (
+                    <p className="mt-2 text-xs text-gray-500">
+                      Progress: {achievement.currentValue}/{achievement.threshold}
+                    </p>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </Card>
 
       {/* History Tabs */}
       <div className="flex gap-2 mb-4">
@@ -325,6 +497,7 @@ function TokenTransactionRow({ transaction }: { transaction: TokenTransaction })
       PREDICTION_STAKE: '🎯',
       PREDICTION_WIN: '🏆',
       PREDICTION_REFUND: '↩️',
+      STREAK_BONUS: '🔥',
       CASHOUT: '💸',
       REDEMPTION: '🎁',
       REDEMPTION_REFUND: '↩️',

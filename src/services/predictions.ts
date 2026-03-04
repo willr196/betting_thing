@@ -3,16 +3,43 @@ import { prisma } from './database.js';
 import { config } from '../config/index.js';
 import { AppError } from '../utils/index.js';
 import { TokenAllowanceService } from './tokenAllowance.js';
-import type { NormalizedOdds } from './oddsApi.js';
+import { OddsApiService, type NormalizedOdds } from './oddsApi.js';
 import { PointsLedgerService } from './pointsLedger.js';
 import { matchOutcomeExact, findOddsOutcome } from './outcomes.js';
+import { logger } from '../logger.js';
 
 // =============================================================================
 // PREDICTION SERVICE
 // =============================================================================
 
-const CASHOUT_ODDS_MAX_AGE_MS = config.cashout.stalenessThresholdMs;
-const PLACE_ODDS_MAX_AGE_MS = 30 * 60 * 1000; // 30 minutes
+const ODDS_STALENESS_THRESHOLD_MS = config.oddsApi.stalenessThresholdMs;
+
+type OddsPolicy = {
+  unavailableCode: string;
+  unavailableMessage: string;
+  unavailableStatus: number;
+  staleCode: string;
+  staleMessage: string;
+  staleStatus: number;
+};
+
+const PLACE_ODDS_POLICY: OddsPolicy = {
+  unavailableCode: 'ODDS_UNAVAILABLE',
+  unavailableMessage: 'Odds not yet available for this event. Please try again shortly.',
+  unavailableStatus: 503,
+  staleCode: 'ODDS_STALE',
+  staleMessage: 'Odds data is being refreshed. Please try again in a moment.',
+  staleStatus: 503,
+};
+
+const CASHOUT_ODDS_POLICY: OddsPolicy = {
+  unavailableCode: 'CASHOUT_UNAVAILABLE',
+  unavailableMessage: 'Odds data is unavailable for cashout. Please try again shortly.',
+  unavailableStatus: 409,
+  staleCode: 'ODDS_STALE',
+  staleMessage: 'Odds data is too old to cashout safely. Please try again.',
+  staleStatus: 409,
+};
 
 export const PredictionService = {
   /**
@@ -61,26 +88,9 @@ export const PredictionService = {
       );
     }
 
-    const odds = getCachedOdds(event.currentOdds);
-    if (!odds) {
-      throw new AppError(
-        'ODDS_UNAVAILABLE' as never,
-        'Odds not yet available for this event. Please try again shortly.',
-        503
-      );
-    }
+    const oddsResult = await resolveEventOddsWithFallback(event, PLACE_ODDS_POLICY);
 
-    const oddsUpdatedAtMs = new Date(odds.updatedAt).getTime();
-    const oddsAgeMs = Date.now() - oddsUpdatedAtMs;
-    if (!Number.isFinite(oddsAgeMs) || oddsAgeMs > PLACE_ODDS_MAX_AGE_MS) {
-      throw new AppError(
-        'ODDS_STALE' as never,
-        'Odds data is being refreshed. Please try again in a moment.',
-        503
-      );
-    }
-
-    const outcomeOdds = findOddsOutcome(odds.outcomes, canonicalOutcome);
+    const outcomeOdds = findOddsOutcome(oddsResult.odds.outcomes, canonicalOutcome);
 
     if (!outcomeOdds) {
       throw new AppError(
@@ -329,28 +339,10 @@ export const PredictionService = {
       throw new AppError('CASHOUT_UNAVAILABLE', 'Event is already settled', 409);
     }
 
-    const odds = getCachedOdds(prediction.event.currentOdds);
-    if (!odds) {
-      throw new AppError(
-        'CASHOUT_UNAVAILABLE',
-        'Odds data is unavailable for cashout. Please try again shortly.',
-        409
-      );
-    }
+    const oddsResult = await resolveEventOddsWithFallback(prediction.event, CASHOUT_ODDS_POLICY);
+    const oddsAgeMs = Date.now() - oddsResult.updatedAtMs;
 
-    const oddsUpdatedAtMs = prediction.event.oddsUpdatedAt
-      ? prediction.event.oddsUpdatedAt.getTime()
-      : new Date(odds.updatedAt).getTime();
-    const oddsAgeMs = Date.now() - oddsUpdatedAtMs;
-    if (!Number.isFinite(oddsAgeMs) || oddsAgeMs > CASHOUT_ODDS_MAX_AGE_MS) {
-      throw new AppError(
-        'CASHOUT_UNAVAILABLE',
-        'Odds data is too old to cashout safely. Please try again.',
-        409
-      );
-    }
-
-    const outcomeOdds = findOddsOutcome(odds.outcomes, prediction.predictedOutcome);
+    const outcomeOdds = findOddsOutcome(oddsResult.odds.outcomes, prediction.predictedOutcome);
 
     if (!outcomeOdds) {
       throw new AppError('CASHOUT_UNAVAILABLE', 'Outcome not found in cached odds', 409);
@@ -376,7 +368,7 @@ export const PredictionService = {
       originalOdds,
       eventStarted,
       oddsAge: Math.round(oddsAgeMs / 1000), // seconds
-      updatedAt: prediction.event.oddsUpdatedAt?.toISOString() ?? odds.updatedAt,
+      updatedAt: new Date(oddsResult.updatedAtMs).toISOString(),
     };
   },
 
@@ -384,9 +376,9 @@ export const PredictionService = {
    * Execute cashout for a prediction.
    */
   async cashout(predictionId: string, userId: string) {
-    const cashout = await this.getCashoutValue(predictionId, userId);
+    const cashoutPreview = await this.getCashoutValue(predictionId, userId);
 
-    if (cashout.cashoutValue <= 0) {
+    if (cashoutPreview.cashoutValue <= 0) {
       throw new AppError('CASHOUT_UNAVAILABLE', 'Cashout value is zero', 409);
     }
 
@@ -402,10 +394,68 @@ export const PredictionService = {
         throw new AppError('CASHOUT_UNAVAILABLE', 'Prediction is not eligible for cashout', 409);
       }
 
+      const event = await lockEventForCashout(tx, prediction.eventId);
+      if (!event) {
+        throw AppError.notFound('Event');
+      }
+
+      if (event.status === 'SETTLED' || event.status === 'CANCELLED') {
+        throw new AppError('CASHOUT_UNAVAILABLE', 'Event is already settled', 409);
+      }
+
+      const refreshedOdds = await resolveEventOddsWithFallback(
+        event,
+        CASHOUT_ODDS_POLICY,
+        { forceRefresh: true, tx }
+      );
+
+      const refreshedOutcomeOdds = findOddsOutcome(
+        refreshedOdds.odds.outcomes,
+        prediction.predictedOutcome
+      );
+      if (!refreshedOutcomeOdds) {
+        throw new AppError('CASHOUT_UNAVAILABLE', 'Outcome not found in cached odds', 409);
+      }
+
+      const oddsDriftPercent = calculateOddsDriftPercent(
+        cashoutPreview.currentOdds,
+        refreshedOutcomeOdds.price
+      );
+      if (oddsDriftPercent > config.cashout.oddsDriftThresholdPercent) {
+        throw new AppError(
+          'CASHOUT_ODDS_CHANGED' as never,
+          'Cashout odds changed materially. Please refresh and try again.',
+          409,
+          {
+            requestedOdds: cashoutPreview.currentOdds,
+            latestOdds: refreshedOutcomeOdds.price,
+            driftPercent: Math.round(oddsDriftPercent * 100) / 100,
+            maxAllowedPercent: config.cashout.oddsDriftThresholdPercent,
+          }
+        );
+      }
+
+      const originalOdds = prediction.originalOdds?.toNumber();
+      if (!originalOdds) {
+        throw new AppError('CASHOUT_UNAVAILABLE', 'Original odds not available', 409);
+      }
+
+      const eventStarted = event.startsAt.getTime() <= Date.now();
+      const finalCashoutValue = calculateCashoutValue(
+        prediction.stakeAmount,
+        originalOdds,
+        refreshedOutcomeOdds.price,
+        eventStarted
+      );
+
+      if (finalCashoutValue <= 0) {
+        throw new AppError('CASHOUT_UNAVAILABLE', 'Cashout value is zero', 409);
+      }
+
       await PointsLedgerService.credit(
         {
           userId,
-          amount: cashout.cashoutValue,
+          amount: finalCashoutValue,
           type: 'CASHOUT',
           referenceType: 'PREDICTION',
           referenceId: predictionId,
@@ -419,8 +469,8 @@ export const PredictionService = {
         data: {
           status: 'CASHED_OUT',
           cashedOutAt: new Date(),
-          cashoutAmount: cashout.cashoutValue,
-          payout: cashout.cashoutValue,
+          cashoutAmount: finalCashoutValue,
+          payout: finalCashoutValue,
         },
       });
     });
@@ -438,6 +488,113 @@ export function calculateCashoutValue(
   const cashoutValue = Math.floor(originalStakeTokens * (originalOdds / currentOdds) * margin);
 
   return Math.max(0, cashoutValue);
+}
+
+type EventOddsSnapshot = {
+  id: string;
+  externalSportKey: string | null;
+  externalEventId: string | null;
+  currentOdds: unknown;
+  oddsUpdatedAt: Date | null;
+};
+
+async function resolveEventOddsWithFallback(
+  event: EventOddsSnapshot,
+  policy: OddsPolicy,
+  options: { forceRefresh?: boolean; tx?: Prisma.TransactionClient } = {}
+): Promise<{ odds: NormalizedOdds; updatedAtMs: number }> {
+  const { forceRefresh = false, tx } = options;
+
+  if (event.externalSportKey && event.externalEventId) {
+    try {
+      const liveOdds = await OddsApiService.getEventOdds(
+        event.externalSportKey,
+        event.externalEventId,
+        { forceRefresh }
+      );
+
+      if (liveOdds) {
+        await persistEventOdds(event.id, liveOdds, tx);
+        return {
+          odds: liveOdds,
+          updatedAtMs: new Date(liveOdds.updatedAt).getTime(),
+        };
+      }
+    } catch (error) {
+      logger.warn(
+        {
+          eventId: event.id,
+          externalSportKey: event.externalSportKey,
+          externalEventId: event.externalEventId,
+          err: error,
+        },
+        '[Prediction] Live odds fetch failed, attempting cached DB odds fallback'
+      );
+    }
+  }
+
+  const cachedOdds = getCachedOdds(event.currentOdds);
+  if (!cachedOdds) {
+    throw new AppError(
+      policy.unavailableCode as never,
+      policy.unavailableMessage,
+      policy.unavailableStatus
+    );
+  }
+
+  const updatedAtMs = getOddsUpdatedAtMs(event.oddsUpdatedAt, cachedOdds.updatedAt);
+  const oddsAgeMs = Date.now() - updatedAtMs;
+  if (!Number.isFinite(oddsAgeMs) || oddsAgeMs > ODDS_STALENESS_THRESHOLD_MS) {
+    throw new AppError(
+      policy.staleCode as never,
+      policy.staleMessage,
+      policy.staleStatus,
+      {
+        maxAgeMinutes: Math.round(ODDS_STALENESS_THRESHOLD_MS / 60_000),
+      }
+    );
+  }
+
+  return {
+    odds: cachedOdds,
+    updatedAtMs,
+  };
+}
+
+function getOddsUpdatedAtMs(oddsUpdatedAt: Date | null, fallbackUpdatedAt: string) {
+  if (oddsUpdatedAt) {
+    return oddsUpdatedAt.getTime();
+  }
+
+  return new Date(fallbackUpdatedAt).getTime();
+}
+
+async function persistEventOdds(
+  eventId: string,
+  odds: NormalizedOdds,
+  tx?: Prisma.TransactionClient
+) {
+  const client = tx ?? prisma;
+
+  try {
+    await client.event.update({
+      where: { id: eventId },
+      data: {
+        currentOdds: odds as unknown as Prisma.InputJsonValue,
+        oddsUpdatedAt: new Date(odds.updatedAt),
+      },
+    });
+  } catch (error) {
+    logger.warn({ eventId, err: error }, '[Prediction] Failed to persist refreshed event odds');
+  }
+}
+
+function calculateOddsDriftPercent(previousOdds: number, latestOdds: number): number {
+  if (previousOdds <= 0) {
+    return Number.POSITIVE_INFINITY;
+  }
+
+  return Math.abs(((latestOdds - previousOdds) / previousOdds) * 100);
 }
 
 function getCachedOdds(currentOdds: unknown): NormalizedOdds | null {
@@ -505,18 +662,61 @@ async function lockPredictionForCashout(
 ): Promise<{
   id: string;
   userId: string;
+  eventId: string;
+  predictedOutcome: string;
   status: string;
   cashedOutAt: Date | null;
   stakeAmount: number;
+  originalOdds: Prisma.Decimal | null;
 } | null> {
   const [prediction] = await tx.$queryRaw<
     Array<{
       id: string;
       userId: string;
+      eventId: string;
+      predictedOutcome: string;
       status: string;
       cashedOutAt: Date | null;
       stakeAmount: number;
+      originalOdds: Prisma.Decimal | null;
     }>
-  >`SELECT "id", "userId", "status", "cashedOutAt", "stakeAmount" FROM "Prediction" WHERE "id" = ${predictionId} FOR UPDATE`;
+  >`SELECT "id", "userId", "eventId", "predictedOutcome", "status", "cashedOutAt", "stakeAmount", "originalOdds"
+    FROM "Prediction"
+    WHERE "id" = ${predictionId}
+    FOR UPDATE`;
   return prediction ?? null;
+}
+
+async function lockEventForCashout(
+  tx: Prisma.TransactionClient,
+  eventId: string
+): Promise<{
+  id: string;
+  status: string;
+  startsAt: Date;
+  externalSportKey: string | null;
+  externalEventId: string | null;
+  currentOdds: unknown;
+  oddsUpdatedAt: Date | null;
+} | null> {
+  const [event] = await tx.$queryRaw<
+    Array<{
+      id: string;
+      status: string;
+      startsAt: Date;
+      externalSportKey: string | null;
+      externalEventId: string | null;
+      currentOdds: unknown;
+      oddsUpdatedAt: Date | null;
+    }>
+  >`SELECT "id", "status", "startsAt", "externalSportKey", "externalEventId", "currentOdds", "oddsUpdatedAt"
+    FROM "Event"
+    WHERE "id" = ${eventId}
+    FOR UPDATE`;
+
+  return event ?? null;
+}
+
+export function calculateOddsDriftPercentForTest(previousOdds: number, latestOdds: number): number {
+  return calculateOddsDriftPercent(previousOdds, latestOdds);
 }
