@@ -6,6 +6,7 @@ import { TokenAllowanceService } from './tokenAllowance.js';
 import { AchievementService } from './achievements.js';
 import { LeaderboardService } from './leaderboard.js';
 import { LeagueStandingsService } from './leagueStandings.js';
+import { AccumulatorService } from './accumulators.js';
 import { AppError } from '../utils/index.js';
 import type { SettlementResult } from '../types/index.js';
 import type { NormalizedOdds } from './oddsApi.js';
@@ -274,6 +275,8 @@ export const EventService = {
           }
         }
 
+        await AccumulatorService.settleLegsForEvent(eventId, finalOutcome, tx);
+
         await tx.event.update({
           where: { id: eventId },
           data: {
@@ -408,6 +411,8 @@ export const EventService = {
 
           refunded++;
         }
+
+        await AccumulatorService.cancelLegsForEvent(eventId, tx);
 
         return { refunded };
       },

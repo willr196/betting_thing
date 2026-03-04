@@ -14,3 +14,4 @@ export { LeaderboardService } from './leaderboard.js';
 export { AchievementService } from './achievements.js';
 export { LeagueService } from './leagues.js';
 export { LeagueStandingsService } from './leagueStandings.js';
+export { AccumulatorService } from './accumulators.js';

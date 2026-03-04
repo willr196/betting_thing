@@ -1,89 +1,76 @@
-import { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
-import { z } from 'zod';
-import { api, ApiError } from '../lib/api';
-import { useAuth } from '../context/AuthContext';
+import { useEffect, useState } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
 import { useToast } from '../context/ToastContext';
-import { formatDate, formatTokens, formatPoints, getStatusColor } from '../lib/utils';
-import { Card, Badge, Button, Input, Spinner } from '../components/ui';
+import { useBetSlip } from '../context/BetSlipContext';
+import { api } from '../lib/api';
+import { formatDate, formatTokens, getStatusColor } from '../lib/utils';
+import { Badge, Button, Card, Spinner } from '../components/ui';
 import type { Event, EventStats } from '../types';
-
-const stakeSchema = z.object({
-  stakeAmount: z.number().int().min(1, 'Minimum stake is 1').max(35, 'Maximum stake is 35'),
-});
 
 export function EventDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { user, refreshUser } = useAuth();
-  const { success: showSuccess, error: showError } = useToast();
+  const { success: showSuccess } = useToast();
+  const { addSelection } = useBetSlip();
 
   const [event, setEvent] = useState<Event | null>(null);
   const [stats, setStats] = useState<EventStats | null>(null);
   const [odds, setOdds] = useState<Event['currentOdds'] | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
-  const [selectedOutcome, setSelectedOutcome] = useState<string | null>(null);
-  const [stakeAmount, setStakeAmount] = useState<number | ''>( 5);
-  const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
-    if (id) {
-      loadEvent();
+    if (!id) {
+      return;
     }
+
+    void loadEvent(id);
   }, [id]);
 
-  const loadEvent = async () => {
-    if (!id) return;
-
+  const loadEvent = async (eventId: string) => {
     setIsLoading(true);
     setLoadError('');
+
     try {
       const [eventData, statsData] = await Promise.all([
-        api.getEvent(id),
-        api.getEventStats(id),
+        api.getEvent(eventId),
+        api.getEventStats(eventId),
       ]);
+
       setEvent(eventData.event);
       setStats(statsData.stats);
+
       try {
-        const oddsData = await api.getEventOdds(id);
+        const oddsData = await api.getEventOdds(eventId);
         setOdds(oddsData.odds ?? eventData.event.currentOdds ?? null);
       } catch {
         setOdds(eventData.event.currentOdds ?? null);
       }
-    } catch (err) {
+    } catch (error) {
       setLoadError('Failed to load event. Please try again.');
-      console.error('Failed to load event:', err);
+      console.error('Failed to load event', error);
     } finally {
       setIsLoading(false);
     }
   };
 
-  const handleSubmit = async () => {
-    if (!event || !selectedOutcome) return;
-
-    const parsed = stakeSchema.safeParse({ stakeAmount });
-    if (!parsed.success) {
-      showError(parsed.error.issues[0]?.message ?? 'Invalid stake amount');
+  const handleAddToSlip = (outcome: string) => {
+    if (!event) {
       return;
     }
 
-    setIsSubmitting(true);
-
-    try {
-      const result = await api.placePrediction(event.id, selectedOutcome, parsed.data.stakeAmount);
-      showSuccess('Prediction placed!');
-      for (const achievement of result.achievementsUnlocked ?? []) {
-        showSuccess(`${achievement.iconEmoji} Achievement unlocked: ${achievement.name}`);
-      }
-      await refreshUser();
-      navigate('/predictions');
-    } catch (err) {
-      const message = err instanceof ApiError ? err.message : 'Failed to place prediction';
-      showError(message);
-    } finally {
-      setIsSubmitting(false);
+    const canPredict = event.status === 'OPEN' && event.startsAt ? new Date(event.startsAt).getTime() > Date.now() : false;
+    if (!canPredict) {
+      return;
     }
+
+    const outcomeOdds =
+      odds?.outcomes.find(
+        (item) => item.name.trim().toLowerCase() === outcome.trim().toLowerCase()
+      )?.price ?? event.payoutMultiplier;
+
+    addSelection(event.id, event.title, outcome, outcomeOdds);
+    showSuccess(`Added "${outcome}" to your bet slip`);
   };
 
   if (isLoading) {
@@ -96,10 +83,10 @@ export function EventDetailPage() {
 
   if (loadError) {
     return (
-      <div className="text-center py-12">
-        <p className="text-red-600 mb-4">{loadError}</p>
+      <div className="py-12 text-center">
+        <p className="mb-4 text-red-600">{loadError}</p>
         <div className="flex justify-center gap-3">
-          <Button onClick={loadEvent}>Retry</Button>
+          <Button onClick={() => id && loadEvent(id)}>Retry</Button>
           <Button variant="secondary" onClick={() => navigate('/events')}>
             Back to Events
           </Button>
@@ -110,7 +97,7 @@ export function EventDetailPage() {
 
   if (!event) {
     return (
-      <div className="text-center py-12">
+      <div className="py-12 text-center">
         <h2 className="text-xl font-semibold text-gray-900">Event not found</h2>
         <Button className="mt-4" onClick={() => navigate('/events')}>
           Back to Events
@@ -119,45 +106,29 @@ export function EventDetailPage() {
     );
   }
 
-  const isOpen = event.status === 'OPEN';
-  const hasStarted = new Date(event.startsAt).getTime() < Date.now();
-  const canPredict = isOpen && !hasStarted;
-  const selectedOdds = odds?.outcomes.find(
-    (outcome) =>
-      outcome.name.trim().toLowerCase() === (selectedOutcome ?? '').trim().toLowerCase()
-  )?.price;
-  const potentialWin = stakeAmount === ''
-    ? 0
-    : Math.floor(stakeAmount * (selectedOdds ?? event.payoutMultiplier));
+  const hasStarted = new Date(event.startsAt).getTime() <= Date.now();
+  const canPredict = event.status === 'OPEN' && !hasStarted;
 
   return (
-    <div className="max-w-4xl mx-auto">
-      {/* Back button */}
+    <div className="mx-auto max-w-4xl">
       <button
         onClick={() => navigate('/events')}
-        className="flex items-center text-gray-600 hover:text-gray-900 mb-6"
+        className="mb-6 flex items-center text-gray-600 hover:text-gray-900"
       >
         ← Back to Events
       </button>
 
       <div className="grid gap-6 lg:grid-cols-3">
-        {/* Event Details */}
-        <div className="lg:col-span-2 space-y-6">
+        <div className="space-y-6 lg:col-span-2">
           <Card>
-            <div className="flex items-start justify-between mb-4">
+            <div className="mb-4 flex items-start justify-between">
               <Badge className={getStatusColor(event.status)}>{event.status}</Badge>
-              <span className="text-sm text-gray-500">
-                {event._count?.predictions ?? 0} predictions
-              </span>
+              <span className="text-sm text-gray-500">{event._count?.predictions ?? 0} predictions</span>
             </div>
 
-            <h1 className="text-2xl font-bold text-gray-900 mb-2">
-              {event.title}
-            </h1>
+            <h1 className="mb-2 text-2xl font-bold text-gray-900">{event.title}</h1>
 
-            {event.description && (
-              <p className="text-gray-600 mb-4">{event.description}</p>
-            )}
+            {event.description && <p className="mb-4 text-gray-600">{event.description}</p>}
 
             <div className="grid grid-cols-2 gap-4 text-sm">
               <div>
@@ -165,7 +136,7 @@ export function EventDetailPage() {
                 <p className="font-medium">{formatDate(event.startsAt)}</p>
               </div>
               <div>
-                <span className="text-gray-500">Payout Multiplier</span>
+                <span className="text-gray-500">Base payout multiplier</span>
                 <p className="font-medium text-green-600">{event.payoutMultiplier}x</p>
               </div>
             </div>
@@ -182,26 +153,20 @@ export function EventDetailPage() {
             )}
 
             {event.finalOutcome && (
-              <div className="mt-4 p-4 bg-green-50 rounded-lg">
+              <div className="mt-4 rounded-lg bg-green-50 p-4">
                 <p className="text-green-800">
-                  <span className="font-semibold">🏆 Final Result:</span>{' '}
-                  {event.finalOutcome}
+                  <span className="font-semibold">Final Result:</span> {event.finalOutcome}
                 </p>
               </div>
             )}
           </Card>
 
-          {/* Outcome Stats */}
           {stats && (
             <Card>
-              <h2 className="font-semibold text-gray-900 mb-4">
-                Prediction Distribution
-              </h2>
+              <h2 className="mb-4 font-semibold text-gray-900">Prediction Distribution</h2>
               <div className="space-y-3">
                 {event.outcomes.map((outcome) => {
-                  const outcomeStat = stats.outcomes.find(
-                    (o) => o.outcome === outcome
-                  );
+                  const outcomeStat = stats.outcomes.find((item) => item.outcome === outcome);
                   const percentage =
                     stats.totalPredictions > 0
                       ? ((outcomeStat?.count ?? 0) / stats.totalPredictions) * 100
@@ -209,15 +174,15 @@ export function EventDetailPage() {
 
                   return (
                     <div key={outcome}>
-                      <div className="flex justify-between text-sm mb-1">
+                      <div className="mb-1 flex justify-between text-sm">
                         <span className="text-gray-700">{outcome}</span>
                         <span className="text-gray-500">
                           {outcomeStat?.count ?? 0} ({percentage.toFixed(0)}%)
                         </span>
                       </div>
-                      <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+                      <div className="h-2 overflow-hidden rounded-full bg-gray-100">
                         <div
-                          className="h-full bg-primary-500 rounded-full transition-all"
+                          className="h-full rounded-full bg-primary-500 transition-all"
                           style={{ width: `${percentage}%` }}
                         />
                       </div>
@@ -232,87 +197,49 @@ export function EventDetailPage() {
           )}
         </div>
 
-        {/* Prediction Form */}
         <div className="lg:col-span-1">
           <Card className="sticky top-6">
-            <h2 className="font-semibold text-gray-900 mb-4">
-              {canPredict ? 'Make Your Prediction' : 'Predictions Closed'}
+            <h2 className="mb-4 font-semibold text-gray-900">
+              {canPredict ? 'Add selections to slip' : 'Betting Closed'}
             </h2>
 
             {!canPredict && (
-              <p className="text-sm text-gray-500 mb-4">
+              <p className="mb-4 text-sm text-gray-500">
                 {event.status === 'SETTLED'
-                  ? 'This event has been settled.'
+                  ? 'This event has already been settled.'
                   : event.status === 'CANCELLED'
-                  ? 'This event was cancelled.'
-                  : hasStarted
-                  ? 'This event has already started.'
-                  : 'Predictions are currently locked.'}
+                    ? 'This event was cancelled.'
+                    : hasStarted
+                      ? 'This event has already started.'
+                      : 'Betting is currently locked.'}
               </p>
             )}
 
-            {canPredict && (
-              <>
-                {/* Outcome Selection */}
-                <div className="mb-4">
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Select Outcome
-                  </label>
-                  <div className="space-y-2">
-                    {event.outcomes.map((outcome) => (
-                      <button
-                        key={outcome}
-                        onClick={() => setSelectedOutcome(outcome)}
-                        className={`w-full p-3 text-left rounded-lg border-2 transition-colors ${
-                          selectedOutcome === outcome
-                            ? 'border-primary-500 bg-primary-50'
-                            : 'border-gray-200 hover:border-gray-300'
-                        }`}
-                      >
-                        <span className="font-medium">{outcome}</span>
-                      </button>
-                    ))}
+            <div className="space-y-3">
+              {event.outcomes.map((outcome) => {
+                const outcomeOdds =
+                  odds?.outcomes.find(
+                    (item) => item.name.trim().toLowerCase() === outcome.trim().toLowerCase()
+                  )?.price ?? event.payoutMultiplier;
+
+                return (
+                  <div key={outcome} className="rounded-lg border border-gray-200 p-3">
+                    <div className="mb-2 flex items-center justify-between gap-2">
+                      <span className="text-sm font-medium text-gray-900">{outcome}</span>
+                      <span className="text-sm text-green-700">{outcomeOdds.toFixed(2)}x</span>
+                    </div>
+                    <Button
+                      className="w-full"
+                      size="sm"
+                      onClick={() => handleAddToSlip(outcome)}
+                      disabled={!canPredict}
+                    >
+                      Add to Slip
+                    </Button>
                   </div>
-                </div>
-
-                {/* Stake Amount */}
-                <div className="mb-4">
-                  <Input
-                    label="Stake Amount"
-                    type="number"
-                    value={stakeAmount}
-                    onChange={(e) => {
-                      const val = e.target.valueAsNumber;
-                      setStakeAmount(Number.isNaN(val) ? '' : val);
-                    }}
-                    min={1}
-                    max={35}
-                  />
-                  <p className="mt-1 text-xs text-gray-500">
-                    Min: 1 • Max: 35 • Your balance: {formatTokens(user?.tokenBalance ?? 0)}
-                  </p>
-                </div>
-
-                {/* Potential Win */}
-                <div className="mb-4 p-3 bg-gray-50 rounded-lg">
-                  <p className="text-sm text-gray-600">Potential win</p>
-                  <p className="text-xl font-bold text-green-600">
-                    {formatPoints(potentialWin)} points
-                  </p>
-                </div>
-
-                {/* Submit */}
-                <Button
-                  className="w-full"
-                  size="lg"
-                  onClick={handleSubmit}
-                  disabled={!selectedOutcome || stakeAmount === '' || isSubmitting}
-                  isLoading={isSubmitting}
-                >
-                  Place Prediction
-                </Button>
-              </>
-            )}
+                );
+              })}
+            </div>
           </Card>
         </div>
       </div>

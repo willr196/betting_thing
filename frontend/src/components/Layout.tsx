@@ -3,6 +3,7 @@ import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../lib/api';
 import { formatTokens, formatPoints } from '../lib/utils';
+import { BetSlip } from './BetSlip';
 import { Button } from './ui';
 
 // =============================================================================
@@ -187,6 +188,8 @@ export function Layout() {
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <Outlet />
       </main>
+
+      {isAuthenticated && <BetSlip />}
 
       {/* Footer */}
       <footer className="bg-white border-t border-gray-200 mt-auto">

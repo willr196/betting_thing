@@ -6,6 +6,7 @@ import type {
   EventStats,
   Prediction,
   PredictionStats,
+  Accumulator,
   LeaderboardEntry,
   LeaderboardPeriod,
   Achievement,
@@ -339,6 +340,40 @@ class ApiClient {
     return this.request<{ prediction: Prediction; achievementsUnlocked?: AchievementUnlocked[] }>(`/predictions/${predictionId}/cashout`, {
       method: 'POST',
     });
+  }
+
+  // ===========================================================================
+  // ACCUMULATORS
+  // ===========================================================================
+
+  async placeAccumulator(
+    legs: Array<{ eventId: string; predictedOutcome: string }>,
+    stakeAmount: number
+  ): Promise<{ accumulator: Accumulator }> {
+    return this.request<{ accumulator: Accumulator }>('/accumulators', {
+      method: 'POST',
+      body: JSON.stringify({ legs, stakeAmount }),
+    });
+  }
+
+  async getMyAccumulators(params?: {
+    status?: string;
+    limit?: number;
+    offset?: number;
+  }): Promise<{ accumulators: Accumulator[]; total: number }> {
+    const searchParams = new URLSearchParams();
+    if (params?.status) searchParams.set('status', params.status);
+    if (params?.limit != null) searchParams.set('limit', params.limit.toString());
+    if (params?.offset != null) searchParams.set('offset', params.offset.toString());
+
+    const query = searchParams.toString();
+    return this.request<{ accumulators: Accumulator[]; total: number }>(
+      `/accumulators${query ? `?${query}` : ''}`
+    );
+  }
+
+  async getAccumulator(id: string): Promise<{ accumulator: Accumulator }> {
+    return this.request<{ accumulator: Accumulator }>(`/accumulators/${id}`);
   }
 
   // ===========================================================================

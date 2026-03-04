@@ -10,6 +10,7 @@ import achievementsRoutes from './achievements.js';
 import adminRoutes from './admin.js';
 import healthRoutes from './health.js';
 import leagueRoutes from './leagues.js';
+import accumulatorRoutes from './accumulators.js';
 
 const router = Router();
 
@@ -25,5 +26,6 @@ router.use('/achievements', achievementsRoutes);
 router.use('/admin', adminRoutes);
 router.use('/health', healthRoutes);
 router.use('/leagues', leagueRoutes);
+router.use('/accumulators', accumulatorRoutes);
 
 export default router;

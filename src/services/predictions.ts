@@ -48,9 +48,8 @@ export const PredictionService = {
    * 1. Validate event is open
    * 2. Validate stake amount
    * 3. Validate outcome is valid
-   * 4. Check user hasn't already predicted
-   * 5. Debit tokens
-   * 6. Create prediction record
+   * 4. Debit tokens
+   * 5. Create prediction record
    */
   async place(data: {
     userId: string;
@@ -100,7 +99,7 @@ export const PredictionService = {
       );
     }
 
-    // Execute prediction placement atomically — re-check event status and duplicates inside transaction
+    // Execute prediction placement atomically — re-check event status inside transaction
     const prediction = await prisma.$transaction(async (tx) => {
       // Re-fetch event with FOR UPDATE lock to prevent race conditions
       const lockedEvent = await lockEventForPrediction(tx, eventId);
@@ -122,21 +121,6 @@ export const PredictionService = {
           'EVENT_ALREADY_STARTED',
           'Event has already started. No more predictions allowed.',
           400
-        );
-      }
-
-      // Check for existing prediction inside the transaction
-      const existingPrediction = await tx.prediction.findUnique({
-        where: {
-          userId_eventId: { userId, eventId },
-        },
-      });
-
-      if (existingPrediction) {
-        throw new AppError(
-          'ALREADY_PREDICTED',
-          'You have already placed a prediction on this event',
-          409
         );
       }
 

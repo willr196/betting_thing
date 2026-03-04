@@ -59,6 +59,7 @@ model User {
   ownedLeagues      League[]            @relation("LeagueOwner")
   leagueMemberships LeagueMembership[]
   leagueStandings   LeagueStanding[]
+  accumulators      Accumulator[]
   
   @@index([email])
   @@index([createdAt])
@@ -329,6 +330,7 @@ model Event {
   
   // Relations
   predictions     Prediction[]
+  accumulatorLegs AccumulatorLeg[]
   
   @@index([status])
   @@index([startsAt])
@@ -382,9 +384,6 @@ model Prediction {
   createdAt     DateTime         @default(now())
   updatedAt     DateTime         @updatedAt
   
-  // Prevent duplicate predictions on same event by same user
-  @@unique([userId, eventId])
-  
   @@index([userId])
   @@index([userId, status])
   @@index([userId, createdAt])
@@ -399,6 +398,54 @@ enum PredictionStatus {
   LOST      // Prediction was incorrect
   REFUNDED  // Event was cancelled, stake returned
   CASHED_OUT // User cashed out early
+}
+
+// =============================================================================
+// ACCUMULATOR
+// =============================================================================
+// A combined bet where all selections must win for the payout.
+
+model Accumulator {
+  id              String            @id @default(cuid())
+  userId          String
+  user            User              @relation(fields: [userId], references: [id])
+  stakeAmount     Int
+  combinedOdds    Decimal           @db.Decimal(10, 4)
+  potentialPayout Int
+  status          AccumulatorStatus @default(PENDING)
+  payout          Int?
+  settledAt       DateTime?
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+  legs            AccumulatorLeg[]
+
+  @@index([userId, status])
+  @@index([status])
+  @@index([userId, createdAt])
+}
+
+model AccumulatorLeg {
+  id               String           @id @default(cuid())
+  accumulatorId    String
+  accumulator      Accumulator      @relation(fields: [accumulatorId], references: [id], onDelete: Cascade)
+  eventId          String
+  event            Event            @relation(fields: [eventId], references: [id])
+  predictedOutcome String
+  odds             Decimal          @db.Decimal(10, 4)
+  status           PredictionStatus @default(PENDING)
+  settledAt        DateTime?
+  createdAt        DateTime         @default(now())
+
+  @@index([accumulatorId])
+  @@index([eventId, status])
+}
+
+enum AccumulatorStatus {
+  PENDING
+  WON
+  LOST
+  CANCELLED
+  CASHED_OUT
 }
 
 // =============================================================================

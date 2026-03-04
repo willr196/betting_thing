@@ -31,7 +31,7 @@ integration('Integration Flows', () => {
     expect(profile?.email).toBe(email);
   }, 30_000);
 
-  it('prediction flow: list events -> place prediction -> balance reduced', async () => {
+  it('prediction flow: list events -> place predictions (including duplicate event) -> balance reduced', async () => {
     const unique = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const email = `integration-pred-${unique}@example.com`;
     const password = 'Integration123!';
@@ -72,7 +72,15 @@ integration('Integration Flows', () => {
       stakeAmount: 5,
     });
 
+    // Same user + same event is now allowed; this verifies unique constraint removal behavior.
+    await PredictionService.place({
+      userId: registered.user.id,
+      eventId: event.id,
+      predictedOutcome: 'Away',
+      stakeAmount: 5,
+    });
+
     const balanceAfter = await LedgerService.getBalance(registered.user.id);
-    expect(balanceAfter.cached).toBe(balanceBefore.cached - 5);
+    expect(balanceAfter.cached).toBe(balanceBefore.cached - 10);
   }, 30_000);
 });

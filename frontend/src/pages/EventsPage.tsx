@@ -39,7 +39,7 @@ export function EventsPage() {
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Events</h1>
-          <p className="text-gray-600 mt-1">Choose an event and make your prediction</p>
+          <p className="text-gray-600 mt-1">Choose events and add selections to your bet slip</p>
         </div>
 
         {/* Filters */}
@@ -165,7 +165,7 @@ function EventCard({ event }: { event: Event }) {
             : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
         }`}
       >
-        {isOpen ? 'Make Prediction' : 'View Details'}
+        {isOpen ? 'Add Selections' : 'View Details'}
       </Link>
     </Card>
   );

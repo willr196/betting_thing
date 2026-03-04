@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { BetSlipProvider } from './context/BetSlipContext';
 import { ToastProvider } from './context/ToastContext';
 import { Layout } from './components/Layout';
 import { Spinner } from './components/ui';
@@ -138,7 +139,9 @@ export default function App() {
       <ErrorBoundary>
         <ToastProvider>
           <AuthProvider>
-            <AppRoutes />
+            <BetSlipProvider>
+              <AppRoutes />
+            </BetSlipProvider>
           </AuthProvider>
         </ToastProvider>
       </ErrorBoundary>

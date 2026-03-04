@@ -81,7 +81,16 @@ export const TokenAllowanceService = {
     return prisma.$transaction(async (client) => ensureAllowance(userId, client));
   },
 
-  async consumeTokens(userId: string, amount: number, referenceId: string, tx?: Prisma.TransactionClient) {
+  async consumeTokens(
+    userId: string,
+    amount: number,
+    referenceId: string,
+    tx?: Prisma.TransactionClient,
+    options?: {
+      referenceType?: string;
+      description?: string;
+    }
+  ) {
     if (amount <= 0) {
       throw AppError.badRequest('Stake amount must be positive');
     }
@@ -94,9 +103,9 @@ export const TokenAllowanceService = {
           userId,
           amount,
           type: 'PREDICTION_STAKE',
-          referenceType: 'PREDICTION',
+          referenceType: options?.referenceType ?? 'PREDICTION',
           referenceId,
-          description: `Stake for prediction ${referenceId}`,
+          description: options?.description ?? `Stake for prediction ${referenceId}`,
         },
         client
       );

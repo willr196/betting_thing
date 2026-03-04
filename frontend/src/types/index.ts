@@ -110,6 +110,38 @@ export interface PredictionStats {
 }
 
 // =============================================================================
+// ACCUMULATOR TYPES
+// =============================================================================
+
+export type AccumulatorStatus = 'PENDING' | 'WON' | 'LOST' | 'CANCELLED' | 'CASHED_OUT';
+
+export interface AccumulatorLeg {
+  id: string;
+  accumulatorId: string;
+  eventId: string;
+  predictedOutcome: string;
+  odds: string;
+  status: PredictionStatus;
+  settledAt: string | null;
+  createdAt: string;
+  event?: Event;
+}
+
+export interface Accumulator {
+  id: string;
+  userId: string;
+  stakeAmount: number;
+  combinedOdds: string;
+  potentialPayout: number;
+  status: AccumulatorStatus;
+  payout: number | null;
+  settledAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  legs: AccumulatorLeg[];
+}
+
+// =============================================================================
 // TRANSACTION TYPES
 // =============================================================================
 
