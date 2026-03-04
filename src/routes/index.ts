@@ -9,6 +9,7 @@ import leaderboardRoutes from './leaderboard.js';
 import achievementsRoutes from './achievements.js';
 import adminRoutes from './admin.js';
 import healthRoutes from './health.js';
+import leagueRoutes from './leagues.js';
 
 const router = Router();
 
@@ -23,5 +24,6 @@ router.use('/leaderboard', leaderboardRoutes);
 router.use('/achievements', achievementsRoutes);
 router.use('/admin', adminRoutes);
 router.use('/health', healthRoutes);
+router.use('/leagues', leagueRoutes);
 
 export default router;

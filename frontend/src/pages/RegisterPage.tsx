@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import { ApiError } from '../lib/api';
@@ -14,6 +14,10 @@ export function RegisterPage() {
   const { register } = useAuth();
   const { error: showError } = useToast();
   const navigate = useNavigate();
+  const location = useLocation();
+
+  const redirect = new URLSearchParams(location.search).get('redirect');
+  const safeRedirect = redirect && redirect.startsWith('/') ? redirect : '/events';
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -34,7 +38,7 @@ export function RegisterPage() {
 
     try {
       await register(email, password);
-      navigate('/events');
+      navigate(safeRedirect);
     } catch (err) {
       if (err instanceof ApiError) {
         showError(err.message);
@@ -100,7 +104,10 @@ export function RegisterPage() {
 
           <p className="mt-6 text-center text-sm text-gray-600">
             Already have an account?{' '}
-            <Link to="/login" className="text-primary-600 hover:underline font-medium">
+            <Link
+              to={`/login${redirect ? `?redirect=${encodeURIComponent(redirect)}` : ''}`}
+              className="text-primary-600 hover:underline font-medium"
+            >
               Sign in
             </Link>
           </p>

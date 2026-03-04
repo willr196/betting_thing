@@ -121,8 +121,14 @@ export function optionalAuth(
 /**
  * Type guard helper to check if request is authenticated.
  */
-export function getAuthUser(req: Request): JwtPayload {
-  const authReq = req as AuthenticatedRequest;
+export function getAuthUser<
+  P = Record<string, string>,
+  ResBody = unknown,
+  ReqBody = unknown,
+  ReqQuery = unknown,
+  Locals extends Record<string, unknown> = Record<string, unknown>
+>(req: Request<P, ResBody, ReqBody, ReqQuery, Locals>): JwtPayload {
+  const authReq = req as unknown as AuthenticatedRequest;
   
   if (!authReq.user) {
     throw AppError.unauthorized('Authentication required');

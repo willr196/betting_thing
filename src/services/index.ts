@@ -12,3 +12,5 @@ export { OddsSyncService } from './oddsSync.js';
 export { SettlementWorker } from './settlementWorker.js';
 export { LeaderboardService } from './leaderboard.js';
 export { AchievementService } from './achievements.js';
+export { LeagueService } from './leagues.js';
+export { LeagueStandingsService } from './leagueStandings.js';

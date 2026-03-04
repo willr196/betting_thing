@@ -13,6 +13,7 @@ export function Layout() {
   const { user, isAuthenticated, logout } = useAuth();
   const navigate = useNavigate();
   const [streakCount, setStreakCount] = useState(0);
+  const [leagueCount, setLeagueCount] = useState(0);
 
   useEffect(() => {
     let isCancelled = false;
@@ -36,6 +37,34 @@ export function Layout() {
     }
 
     void loadStreak();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [isAuthenticated, user?.id]);
+
+  useEffect(() => {
+    let isCancelled = false;
+
+    async function loadLeagueCount() {
+      if (!isAuthenticated) {
+        setLeagueCount(0);
+        return;
+      }
+
+      try {
+        const result = await api.getMyLeagues();
+        if (!isCancelled) {
+          setLeagueCount(result.leagues.length);
+        }
+      } catch {
+        if (!isCancelled) {
+          setLeagueCount(0);
+        }
+      }
+    }
+
+    void loadLeagueCount();
 
     return () => {
       isCancelled = true;
@@ -66,6 +95,14 @@ export function Layout() {
                 <div className="hidden sm:flex sm:ml-8 sm:space-x-4">
                   <NavItem to="/events">Events</NavItem>
                   <NavItem to="/predictions">My Predictions</NavItem>
+                  <NavItem to="/leagues">
+                    Leagues
+                    {leagueCount > 0 && (
+                      <span className="ml-1 rounded-full bg-primary-600 px-1.5 py-0.5 text-xs text-white">
+                        {leagueCount}
+                      </span>
+                    )}
+                  </NavItem>
                   <NavItem to="/leaderboard">Leaderboard</NavItem>
                   <NavItem to="/transactions">Transactions</NavItem>
                   <NavItem to="/rewards">Rewards</NavItem>
@@ -136,6 +173,7 @@ export function Layout() {
             <div className="flex justify-around py-2">
               <MobileNavItem to="/events">Events</MobileNavItem>
               <MobileNavItem to="/predictions">Predictions</MobileNavItem>
+              <MobileNavItem to="/leagues">Leagues</MobileNavItem>
               <MobileNavItem to="/leaderboard">Leaders</MobileNavItem>
               <MobileNavItem to="/transactions">History</MobileNavItem>
               <MobileNavItem to="/rewards">Rewards</MobileNavItem>

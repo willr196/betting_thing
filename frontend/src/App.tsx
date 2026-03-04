@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { ToastProvider } from './context/ToastContext';
 import { Layout } from './components/Layout';
@@ -14,6 +14,10 @@ import {
   RewardsPage,
   TransactionsPage,
   WalletPage,
+  LeaguesPage,
+  LeagueDetailPage,
+  LeagueSettingsPage,
+  LeagueJoinPage,
 } from './pages';
 
 // =============================================================================
@@ -22,6 +26,7 @@ import {
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, isLoading } = useAuth();
+  const location = useLocation();
 
   if (isLoading) {
     return (
@@ -32,7 +37,8 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   }
 
   if (!isAuthenticated) {
-    return <Navigate to="/login" replace />;
+    const redirect = `${location.pathname}${location.search}`;
+    return <Navigate to={`/login?redirect=${encodeURIComponent(redirect)}`} replace />;
   }
 
   return <>{children}</>;
@@ -44,6 +50,7 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 
 function PublicRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, isLoading } = useAuth();
+  const location = useLocation();
 
   if (isLoading) {
     return (
@@ -54,7 +61,9 @@ function PublicRoute({ children }: { children: React.ReactNode }) {
   }
 
   if (isAuthenticated) {
-    return <Navigate to="/events" replace />;
+    const redirect = new URLSearchParams(location.search).get('redirect');
+    const safeRedirect = redirect && redirect.startsWith('/') ? redirect : '/events';
+    return <Navigate to={safeRedirect} replace />;
   }
 
   return <>{children}</>;
@@ -104,6 +113,10 @@ function AppRoutes() {
         <Route path="events/:id" element={<ErrorBoundary><EventDetailPage /></ErrorBoundary>} />
         <Route path="predictions" element={<ErrorBoundary><PredictionsPage /></ErrorBoundary>} />
         <Route path="leaderboard" element={<ErrorBoundary><LeaderboardPage /></ErrorBoundary>} />
+        <Route path="leagues" element={<ErrorBoundary><LeaguesPage /></ErrorBoundary>} />
+        <Route path="leagues/join" element={<ErrorBoundary><LeagueJoinPage /></ErrorBoundary>} />
+        <Route path="leagues/:id" element={<ErrorBoundary><LeagueDetailPage /></ErrorBoundary>} />
+        <Route path="leagues/:id/settings" element={<ErrorBoundary><LeagueSettingsPage /></ErrorBoundary>} />
         <Route path="rewards" element={<ErrorBoundary><RewardsPage /></ErrorBoundary>} />
         <Route path="transactions" element={<ErrorBoundary><TransactionsPage /></ErrorBoundary>} />
         <Route path="wallet" element={<ErrorBoundary><WalletPage /></ErrorBoundary>} />

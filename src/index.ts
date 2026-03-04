@@ -6,6 +6,7 @@ import { SettlementWorker } from './services/settlementWorker.js';
 import { EventImportService } from './services/eventImport.js';
 import { EventService } from './services/events.js';
 import { OddsApiService } from './services/oddsApi.js';
+import { LeagueStandingsService } from './services/leagueStandings.js';
 import { logger } from './logger.js';
 
 // =============================================================================
@@ -60,6 +61,7 @@ async function start(): Promise<void> {
     let oddsSyncInterval: ReturnType<typeof setInterval> | undefined;
     let settlementInterval: ReturnType<typeof setInterval> | undefined;
     let eventImportInterval: ReturnType<typeof setInterval> | undefined;
+    let lastLeagueFullRecalcAt = new Date(0);
 
     if (!config.isTest) {
       // Auto-lock and cleanup lifecycle on startup.
@@ -98,6 +100,18 @@ async function start(): Promise<void> {
       settlementInterval = setInterval(async () => {
         try {
           await SettlementWorker.runOnce();
+
+          const dayMs = 24 * 60 * 60 * 1000;
+          if (Date.now() - lastLeagueFullRecalcAt.getTime() > dayMs) {
+            const result = await LeagueStandingsService.recalculateAll();
+            lastLeagueFullRecalcAt = new Date();
+            if (result.recalculatedLeagues > 0) {
+              logger.info(
+                { leagues: result.recalculatedLeagues },
+                '[Leagues] Daily full standings recalculation complete'
+              );
+            }
+          }
         } catch (error) {
           logger.error({ err: error }, 'Settlement worker failed');
         }

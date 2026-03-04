@@ -56,6 +56,9 @@ model User {
   tokenAllowances   TokenAllowance[]
   leaderboards      Leaderboard[]
   userAchievements  UserAchievement[]
+  ownedLeagues      League[]            @relation("LeagueOwner")
+  leagueMemberships LeagueMembership[]
+  leagueStandings   LeagueStanding[]
   
   @@index([email])
   @@index([createdAt])
@@ -184,6 +187,82 @@ enum PointsTransactionType {
   REDEMPTION_REFUND
   ADMIN_CREDIT
   ADMIN_DEBIT
+}
+
+// =============================================================================
+// LEAGUES
+// =============================================================================
+// Private social leagues built on top of existing points data.
+
+model League {
+  id          String   @id @default(cuid())
+  name        String   @db.VarChar(50)
+  description String?  @db.VarChar(200)
+  inviteCode  String   @unique @db.VarChar(8)
+  isOpen      Boolean  @default(true)
+  maxMembers  Int      @default(50)
+  emoji       String   @default("⚽")
+
+  ownerId     String
+  owner       User     @relation("LeagueOwner", fields: [ownerId], references: [id])
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  memberships LeagueMembership[]
+  standings   LeagueStanding[]
+
+  @@index([inviteCode])
+  @@index([ownerId])
+}
+
+model LeagueMembership {
+  id        String   @id @default(cuid())
+  leagueId  String
+  userId    String
+  role      LeagueRole @default(MEMBER)
+  joinedAt  DateTime @default(now())
+  leftAt    DateTime?
+  isActive  Boolean  @default(true)
+
+  league    League   @relation(fields: [leagueId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id])
+
+  @@unique([leagueId, userId])
+  @@index([userId])
+  @@index([leagueId])
+  @@index([leagueId, isActive])
+}
+
+enum LeagueRole {
+  OWNER
+  MEMBER
+}
+
+model LeagueStanding {
+  id               String      @id @default(cuid())
+  leagueId         String
+  userId           String
+  period           LeaguePeriod
+  periodKey        String
+  pointsEarned     Int         @default(0)
+  predictionsWon   Int         @default(0)
+  predictionsLost  Int         @default(0)
+  totalPredictions Int         @default(0)
+  rank             Int         @default(0)
+  updatedAt        DateTime    @updatedAt
+
+  league           League      @relation(fields: [leagueId], references: [id], onDelete: Cascade)
+  user             User        @relation(fields: [userId], references: [id])
+
+  @@unique([leagueId, userId, period, periodKey])
+  @@index([leagueId, period, periodKey, rank])
+  @@index([userId])
+}
+
+enum LeaguePeriod {
+  WEEKLY
+  ALL_TIME
 }
 
 // =============================================================================

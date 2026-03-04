@@ -5,9 +5,11 @@ import { PointsLedgerService } from './pointsLedger.js';
 import { TokenAllowanceService } from './tokenAllowance.js';
 import { AchievementService } from './achievements.js';
 import { LeaderboardService } from './leaderboard.js';
+import { LeagueStandingsService } from './leagueStandings.js';
 import { AppError } from '../utils/index.js';
 import type { SettlementResult } from '../types/index.js';
 import type { NormalizedOdds } from './oddsApi.js';
+import { logger } from '../logger.js';
 
 // =============================================================================
 // EVENT SERVICE
@@ -142,7 +144,7 @@ export const EventService = {
     finalOutcome: string,
     settledBy: string
   ): Promise<SettlementResult> {
-    return prisma.$transaction(
+    const { settlement, affectedUserIds } = await prisma.$transaction(
       async (tx) => {
         const settledAt = new Date();
 
@@ -283,13 +285,16 @@ export const EventService = {
         });
 
         return {
-          eventId,
-          finalOutcome,
-          totalPredictions: predictions.length,
-          winners,
-          losers,
-          totalPayout,
-          settledAt,
+          settlement: {
+            eventId,
+            finalOutcome,
+            totalPredictions: predictions.length,
+            winners,
+            losers,
+            totalPayout,
+            settledAt,
+          },
+          affectedUserIds: Array.from(new Set(predictions.map((prediction) => prediction.userId))),
         };
       },
       {
@@ -297,6 +302,19 @@ export const EventService = {
         timeout: 30000,
       }
     );
+
+    if (affectedUserIds.length > 0) {
+      try {
+        await LeagueStandingsService.recalculateForUsers(affectedUserIds);
+      } catch (error) {
+        logger.error(
+          { err: error, eventId, affectedUsers: affectedUserIds.length },
+          '[Leagues] Failed to refresh standings after event settlement'
+        );
+      }
+    }
+
+    return settlement;
   },
 
   /**

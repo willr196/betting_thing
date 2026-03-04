@@ -16,6 +16,12 @@ import type {
   TokenAllowance,
   Reward,
   Redemption,
+  League,
+  LeagueListItem,
+  LeagueMember,
+  LeagueStandingRow,
+  LeagueMembershipSummary,
+  LeaguePeriod,
 } from '../types';
 
 // =============================================================================
@@ -360,6 +366,128 @@ class ApiClient {
   ): Promise<{ rank: LeaderboardEntry }> {
     const searchParams = new URLSearchParams({ period });
     return this.request(`/leaderboard/me?${searchParams.toString()}`);
+  }
+
+  // ===========================================================================
+  // LEAGUES
+  // ===========================================================================
+
+  async createLeague(data: {
+    name: string;
+    description?: string;
+    emoji?: string;
+  }): Promise<{
+    league: League;
+    membership: LeagueMembershipSummary;
+    memberCount: number;
+  }> {
+    return this.request('/leagues', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async getMyLeagues(): Promise<{ leagues: LeagueListItem[] }> {
+    return this.request('/leagues');
+  }
+
+  async getLeague(leagueId: string): Promise<{
+    league: League;
+    membership: LeagueMembershipSummary;
+    memberCount: number;
+  }> {
+    return this.request(`/leagues/${leagueId}`);
+  }
+
+  async joinLeague(inviteCode: string): Promise<{
+    league: League;
+    membership: LeagueMembershipSummary;
+    memberCount: number;
+  }> {
+    return this.request('/leagues/join', {
+      method: 'POST',
+      body: JSON.stringify({ inviteCode }),
+    });
+  }
+
+  async updateLeague(
+    leagueId: string,
+    data: {
+      name?: string;
+      description?: string;
+      emoji?: string;
+      isOpen?: boolean;
+    }
+  ): Promise<{
+    league: League;
+    membership: LeagueMembershipSummary;
+    memberCount: number;
+  }> {
+    return this.request(`/leagues/${leagueId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteLeague(leagueId: string): Promise<{ deleted: boolean }> {
+    return this.request(`/leagues/${leagueId}`, {
+      method: 'DELETE',
+    });
+  }
+
+  async leaveLeague(leagueId: string): Promise<{ left: boolean }> {
+    return this.request(`/leagues/${leagueId}/leave`, {
+      method: 'POST',
+    });
+  }
+
+  async kickLeagueMember(leagueId: string, targetUserId: string): Promise<{ removed: boolean }> {
+    return this.request(`/leagues/${leagueId}/kick/${targetUserId}`, {
+      method: 'POST',
+    });
+  }
+
+  async transferLeagueOwnership(leagueId: string, newOwnerId: string): Promise<{
+    league: League;
+    membership: LeagueMembershipSummary;
+    memberCount: number;
+  }> {
+    return this.request(`/leagues/${leagueId}/transfer/${newOwnerId}`, {
+      method: 'POST',
+    });
+  }
+
+  async regenerateLeagueInviteCode(leagueId: string): Promise<{ inviteCode: string; inviteUrl: string }> {
+    return this.request(`/leagues/${leagueId}/regenerate-code`, {
+      method: 'POST',
+    });
+  }
+
+  async getLeagueMembers(leagueId: string): Promise<{ members: LeagueMember[] }> {
+    return this.request(`/leagues/${leagueId}/members`);
+  }
+
+  async getLeagueStandings(
+    leagueId: string,
+    period: LeaguePeriod,
+    periodKey?: string
+  ): Promise<{
+    leagueId: string;
+    period: 'WEEKLY' | 'ALL_TIME';
+    periodKey: string;
+    standings: LeagueStandingRow[];
+    requester: LeagueStandingRow | null;
+    updatedAt: string | null;
+  }> {
+    const searchParams = new URLSearchParams({ period });
+    if (periodKey) {
+      searchParams.set('periodKey', periodKey);
+    }
+    return this.request(`/leagues/${leagueId}/standings?${searchParams.toString()}`);
+  }
+
+  async getLeagueInvite(leagueId: string): Promise<{ inviteCode: string; inviteUrl: string }> {
+    return this.request(`/leagues/${leagueId}/invite`);
   }
 
   // ===========================================================================

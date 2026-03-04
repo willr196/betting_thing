@@ -246,3 +246,60 @@ export interface DashboardStats {
   };
   achievementProgress: Achievement[];
 }
+
+// =============================================================================
+// LEAGUES
+// =============================================================================
+
+export type LeagueRole = 'OWNER' | 'MEMBER';
+export type LeaguePeriod = 'weekly' | 'all-time';
+
+export interface League {
+  id: string;
+  name: string;
+  description: string | null;
+  emoji: string;
+  inviteCode: string;
+  isOpen: boolean;
+  maxMembers: number;
+  ownerId: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface LeagueMembershipSummary {
+  role: LeagueRole;
+  joinedAt: string;
+}
+
+export interface LeagueWeekSummary {
+  rank: number;
+  pointsEarned: number;
+  totalPredictions: number;
+}
+
+export interface LeagueListItem extends League {
+  role: LeagueRole;
+  joinedAt: string;
+  memberCount: number;
+  weekly: LeagueWeekSummary | null;
+}
+
+export interface LeagueMember {
+  userId: string;
+  displayName: string;
+  role: LeagueRole;
+  joinedAt: string;
+}
+
+export interface LeagueStandingRow {
+  rank: number;
+  userId: string;
+  displayName: string;
+  pointsEarned: number;
+  predictionsWon: number;
+  predictionsLost: number;
+  totalPredictions: number;
+  winRate: number;
+  updatedAt: string;
+}

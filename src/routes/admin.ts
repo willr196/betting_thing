@@ -9,6 +9,7 @@ import { OddsSyncService } from '../services/oddsSync.js';
 import { OddsApiService } from '../services/oddsApi.js';
 import { EventImportService } from '../services/eventImport.js';
 import { AuditLogService } from '../services/auditLog.js';
+import { LeagueStandingsService } from '../services/leagueStandings.js';
 import { requireAuth, requireAdmin, validateBody, validateParams, getAuthUser, idParamSchema, positiveIntSchema, futureDateSchema } from '../middleware/index.js';
 import { asyncHandler, parseLimitOffset, sendSuccess } from '../utils/index.js';
 
@@ -583,6 +584,18 @@ router.post(
   '/settlement/run',
   asyncHandler(async (_req, res) => {
     const result = await SettlementWorker.runOnce();
+    sendSuccess(res, result);
+  })
+);
+
+/**
+ * POST /admin/leagues/recalculate
+ * Force full league standings recalculation.
+ */
+router.post(
+  '/leagues/recalculate',
+  asyncHandler(async (_req, res) => {
+    const result = await LeagueStandingsService.recalculateAll();
     sendSuccess(res, result);
   })
 );
