@@ -103,6 +103,7 @@ async function seedSlipWithTwoSelections(user: ReturnType<typeof userEvent.setup
 describe('BetSlipContext submit flow', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    window.localStorage.clear();
     authState.user = { tokenBalance: 100 };
   });
 
@@ -194,6 +195,28 @@ describe('BetSlipContext submit flow', () => {
     expect(placePredictionMock).not.toHaveBeenCalled();
     expect(placeAccumulatorMock).not.toHaveBeenCalled();
     expect(refreshUserMock).not.toHaveBeenCalled();
+    expect(screen.getByTestId('selection-count')).toHaveTextContent('2');
+  });
+
+  it('persists selections when provider remounts', async () => {
+    const firstRender = render(
+      <BetSlipProvider>
+        <TestHarness />
+      </BetSlipProvider>
+    );
+
+    const user = userEvent.setup();
+    await seedSlipWithTwoSelections(user);
+    expect(screen.getByTestId('selection-count')).toHaveTextContent('2');
+
+    firstRender.unmount();
+
+    render(
+      <BetSlipProvider>
+        <TestHarness />
+      </BetSlipProvider>
+    );
+
     expect(screen.getByTestId('selection-count')).toHaveTextContent('2');
   });
 });

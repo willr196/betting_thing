@@ -1,6 +1,7 @@
 import {
   createContext,
   useContext,
+  useEffect,
   useMemo,
   useState,
   type ReactNode,
@@ -12,6 +13,7 @@ import { useToast } from './ToastContext';
 const MIN_STAKE = 1;
 const MAX_STAKE = 35;
 const DEFAULT_STAKE = 5;
+const BET_SLIP_STORAGE_PREFIX = 'prediction-platform:bet-slip:v1';
 
 export interface BetSlipSelection {
   id: string;
@@ -45,12 +47,46 @@ const BetSlipContext = createContext<BetSlipContextType | null>(null);
 export function BetSlipProvider({ children }: { children: ReactNode }) {
   const { user, refreshUser } = useAuth();
   const { success: showSuccess, error: showError, info: showInfo } = useToast();
+  const storageKey = useMemo(
+    () => createBetSlipStorageKey(user?.id),
+    [user?.id]
+  );
 
   const [selections, setSelections] = useState<BetSlipSelection[]>([]);
   const [accumulatorEnabled, setAccumulatorEnabled] = useState(false);
   const [singleStake, setSingleStakeState] = useState(DEFAULT_STAKE);
   const [accumulatorStake, setAccumulatorStakeState] = useState(DEFAULT_STAKE);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [hydratedStorageKey, setHydratedStorageKey] = useState<string | null>(null);
+
+  useEffect(() => {
+    const persistedState = loadPersistedState(storageKey);
+    setSelections(persistedState.selections);
+    setAccumulatorEnabled(persistedState.accumulatorEnabled);
+    setSingleStakeState(persistedState.singleStake);
+    setAccumulatorStakeState(persistedState.accumulatorStake);
+    setHydratedStorageKey(storageKey);
+  }, [storageKey]);
+
+  useEffect(() => {
+    if (hydratedStorageKey !== storageKey) {
+      return;
+    }
+
+    persistState(storageKey, {
+      selections,
+      accumulatorEnabled,
+      singleStake,
+      accumulatorStake,
+    });
+  }, [
+    accumulatorEnabled,
+    accumulatorStake,
+    hydratedStorageKey,
+    selections,
+    singleStake,
+    storageKey,
+  ]);
 
   const combinedOdds = useMemo(() => {
     if (selections.length === 0) {
@@ -62,7 +98,7 @@ export function BetSlipProvider({ children }: { children: ReactNode }) {
 
   const totalCost = useMemo(() => {
     const singlesCost = selections.filter((selection) => selection.placeSingle).length * singleStake;
-    const accumulatorCost = accumulatorEnabled ? accumulatorStake : 0;
+    const accumulatorCost = accumulatorEnabled && selections.length >= 2 ? accumulatorStake : 0;
     return singlesCost + accumulatorCost;
   }, [accumulatorEnabled, accumulatorStake, selections, singleStake]);
 
@@ -254,4 +290,118 @@ function createSelectionId(): string {
   }
 
   return `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function createBetSlipStorageKey(userId: string | undefined): string {
+  return `${BET_SLIP_STORAGE_PREFIX}:${userId ?? 'anonymous'}`;
+}
+
+function loadPersistedState(key: string): PersistedState {
+  const storage = getStorage();
+  if (!storage) {
+    return createDefaultPersistedState();
+  }
+
+  try {
+    const rawState = storage.getItem(key);
+    if (!rawState) {
+      return createDefaultPersistedState();
+    }
+
+    const parsedState = JSON.parse(rawState);
+    return normalizePersistedState(parsedState);
+  } catch {
+    return createDefaultPersistedState();
+  }
+}
+
+function persistState(key: string, state: PersistedState): void {
+  const storage = getStorage();
+  if (!storage) {
+    return;
+  }
+
+  try {
+    storage.setItem(key, JSON.stringify(state));
+  } catch {
+    // Ignore write errors and keep in-memory behavior.
+  }
+}
+
+function getStorage(): Storage | null {
+  if (typeof window === 'undefined') {
+    return null;
+  }
+
+  return window.localStorage ?? null;
+}
+
+interface PersistedState {
+  selections: BetSlipSelection[];
+  accumulatorEnabled: boolean;
+  singleStake: number;
+  accumulatorStake: number;
+}
+
+function createDefaultPersistedState(): PersistedState {
+  return {
+    selections: [],
+    accumulatorEnabled: false,
+    singleStake: DEFAULT_STAKE,
+    accumulatorStake: DEFAULT_STAKE,
+  };
+}
+
+function normalizePersistedState(value: unknown): PersistedState {
+  if (!value || typeof value !== 'object') {
+    return createDefaultPersistedState();
+  }
+
+  const stateRecord = value as Record<string, unknown>;
+  const rawSelections = Array.isArray(stateRecord.selections) ? stateRecord.selections : [];
+  const selections = rawSelections
+    .map(normalizeSelection)
+    .filter((selection): selection is BetSlipSelection => selection !== null);
+
+  const accumulatorEnabled = stateRecord.accumulatorEnabled === true;
+  const singleStake = clampStake(typeof stateRecord.singleStake === 'number'
+    ? stateRecord.singleStake
+    : DEFAULT_STAKE);
+  const accumulatorStake = clampStake(typeof stateRecord.accumulatorStake === 'number'
+    ? stateRecord.accumulatorStake
+    : DEFAULT_STAKE);
+
+  return {
+    selections,
+    accumulatorEnabled,
+    singleStake,
+    accumulatorStake,
+  };
+}
+
+function normalizeSelection(value: unknown): BetSlipSelection | null {
+  if (!value || typeof value !== 'object') {
+    return null;
+  }
+
+  const record = value as Record<string, unknown>;
+  const id = typeof record.id === 'string' ? record.id : null;
+  const eventId = typeof record.eventId === 'string' ? record.eventId : null;
+  const eventTitle = typeof record.eventTitle === 'string' ? record.eventTitle : null;
+  const predictedOutcome = typeof record.predictedOutcome === 'string' ? record.predictedOutcome : null;
+  const odds = typeof record.odds === 'number' && Number.isFinite(record.odds) ? record.odds : null;
+  const placeSingle = record.placeSingle !== false;
+
+  if (!id || !eventId || !eventTitle || !predictedOutcome || odds === null) {
+    return null;
+  }
+
+  return {
+    id,
+    eventId,
+    eventTitle,
+    predictedOutcome,
+    odds,
+    placeSingle,
+  };
 }
