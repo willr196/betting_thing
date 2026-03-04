@@ -37,6 +37,10 @@ model User {
   // Increment to revoke all existing tokens (e.g. on password change or compromise)
   tokenVersion  Int      @default(1)
 
+  // Login lockout tracking (auth hardening)
+  failedLoginAttempts Int      @default(0)
+  loginLockoutUntil   DateTime?
+
   // Refresh token (hashed) for persistent sessions via HTTP-only cookie
   refreshTokenHash      String?   @unique
   refreshTokenExpiresAt DateTime?
@@ -53,6 +57,7 @@ model User {
   
   @@index([email])
   @@index([createdAt])
+  @@index([loginLockoutUntil])
 }
 
 // =============================================================================

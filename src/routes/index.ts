@@ -5,6 +5,7 @@ import predictionRoutes from './predictions.js';
 import rewardRoutes from './rewards.js';
 import tokenRoutes from './tokens.js';
 import pointsRoutes from './points.js';
+import leaderboardRoutes from './leaderboard.js';
 import adminRoutes from './admin.js';
 import healthRoutes from './health.js';
 
@@ -17,6 +18,7 @@ router.use('/predictions', predictionRoutes);
 router.use('/rewards', rewardRoutes);
 router.use('/tokens', tokenRoutes);
 router.use('/points', pointsRoutes);
+router.use('/leaderboard', leaderboardRoutes);
 router.use('/admin', adminRoutes);
 router.use('/health', healthRoutes);
 

@@ -3,6 +3,8 @@ import { prisma } from './database.js';
 import { OddsApiService } from './oddsApi.js';
 import { logger } from '../logger.js';
 
+const ALLOWED_SPORT_KEYS = ['soccer_epl'];
+
 type SyncStatus = {
   lastRunAt?: Date;
   lastError?: string;
@@ -46,36 +48,34 @@ export function createOddsSyncService(
       isRunning = true;
 
       try {
-        const activeSportKeys = await prisma.event.findMany({
-          where: {
-            status: { in: ['OPEN', 'LOCKED'] },
-            externalSportKey: { not: null },
-            externalEventId: { not: null },
-          },
-          select: {
-            externalSportKey: true,
-          },
-          distinct: ['externalSportKey'],
-        });
-
         let updatedEvents = 0;
 
-        for (const entry of activeSportKeys) {
-          if (!entry.externalSportKey) {
+        for (const sportKey of ALLOWED_SPORT_KEYS) {
+          const activeEventsCount = await prisma.event.count({
+            where: {
+              status: { in: ['OPEN', 'LOCKED'] },
+              externalSportKey: sportKey,
+              externalEventId: { not: null },
+            },
+          });
+
+          if (activeEventsCount === 0) {
+            logger.info({ sportKey }, '[OddsSync] No active events for sport key, skipping');
             continue;
           }
 
-          const odds = await OddsApiService.getOddsForSport(entry.externalSportKey);
+          const odds = await OddsApiService.getOddsForSport(sportKey);
           const oddsByEvent = new Map(odds.map((item) => [item.id, item]));
 
           const events = await prisma.event.findMany({
             where: {
               status: { in: ['OPEN', 'LOCKED'] },
-              externalSportKey: entry.externalSportKey,
+              externalSportKey: sportKey,
               externalEventId: { not: null },
             },
           });
 
+          let updatedForSport = 0;
           for (const event of events) {
             if (!event.externalEventId) {
               continue;
@@ -99,7 +99,13 @@ export function createOddsSyncService(
             });
 
             updatedEvents++;
+            updatedForSport++;
           }
+
+          logger.info(
+            { sportKey, updatedForSport, activeEventsCount },
+            '[OddsSync] Completed sport sync cycle'
+          );
         }
 
         statusStore.update({
@@ -107,6 +113,8 @@ export function createOddsSyncService(
           lastError: undefined,
           updatedEvents,
         });
+
+        console.log(`[OddsSync] Updated ${updatedEvents} events this cycle`);
 
         return { updatedEvents };
       } catch (error) {

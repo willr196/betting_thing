@@ -187,6 +187,16 @@ Authorization: Bearer <token>
 
 ---
 
+### Leaderboard
+
+#### Get Leaderboard
+```http
+GET /leaderboard?limit=50
+Authorization: Bearer <token>
+```
+
+---
+
 ### Events
 
 #### List Events
@@ -557,6 +567,9 @@ See `.env.example` for all options. Key variables:
 | `THE_ODDS_API_MARKETS` | Markets | h2h |
 | `ODDS_SYNC_INTERVAL_SECONDS` | Odds polling interval | 300 |
 | `SETTLEMENT_INTERVAL_SECONDS` | Settlement polling interval | 300 |
+| `CASHOUT_STALENESS_THRESHOLD_MS` | Max cashout odds age | 300000 |
+| `LOGIN_LOCKOUT_MAX_ATTEMPTS` | Failed logins before lockout | 10 |
+| `LOGIN_LOCKOUT_WINDOW_MINUTES` | Login lockout duration | 30 |
 
 ---
 

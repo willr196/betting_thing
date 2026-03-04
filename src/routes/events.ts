@@ -4,7 +4,6 @@ import { EventService } from '../services/events.js';
 import { PredictionService } from '../services/predictions.js';
 import { optionalAuth, validateQuery, validateParams, idParamSchema } from '../middleware/index.js';
 import { asyncHandler, parseLimitOffset, sendSuccess } from '../utils/index.js';
-import { OddsApiService } from '../services/oddsApi.js';
 
 const router = Router();
 
@@ -97,7 +96,7 @@ router.get(
 
 /**
  * GET /events/:id/odds
- * Get live odds for an event and cache them.
+ * Get cached odds for an event.
  */
 router.get(
   '/:id/odds',
@@ -105,20 +104,10 @@ router.get(
   validateParams(idParamSchema),
   asyncHandler(async (req, res) => {
     const event = await EventService.getById(req.params.id as string);
-    if (!event.externalEventId || !event.externalSportKey) {
+    if (!event.currentOdds) {
       return sendSuccess(res, { odds: null });
     }
-
-    const odds = await OddsApiService.getEventOdds(
-      event.externalSportKey,
-      event.externalEventId
-    );
-
-    if (odds) {
-      await EventService.updateOdds(event.id, odds);
-    }
-
-    sendSuccess(res, { odds });
+    sendSuccess(res, { odds: event.currentOdds });
   })
 );
 

@@ -214,6 +214,22 @@ export const EventService = {
                 : lockedEvent.payoutMultiplier;
             const payout = calculatePayout(prediction.stakeAmount, odds);
 
+            const wonUpdate = await tx.prediction.updateMany({
+              where: {
+                id: prediction.id,
+                status: 'PENDING',
+              },
+              data: {
+                status: 'WON',
+                payout,
+                settledAt,
+              },
+            });
+
+            if (wonUpdate.count === 0) {
+              continue;
+            }
+
             await PointsLedgerService.credit(
               {
                 userId: prediction.userId,
@@ -226,26 +242,24 @@ export const EventService = {
               tx
             );
 
-            await tx.prediction.update({
-              where: { id: prediction.id },
-              data: {
-                status: 'WON',
-                payout,
-                settledAt,
-              },
-            });
-
             winners++;
             totalPayout += payout;
           } else {
-            await tx.prediction.update({
-              where: { id: prediction.id },
+            const lostUpdate = await tx.prediction.updateMany({
+              where: {
+                id: prediction.id,
+                status: 'PENDING',
+              },
               data: {
                 status: 'LOST',
                 payout: 0,
                 settledAt,
               },
             });
+
+            if (lostUpdate.count === 0) {
+              continue;
+            }
 
             losers++;
           }
@@ -286,7 +300,6 @@ export const EventService = {
       async (tx) => {
         const cancelledAt = new Date();
 
-        // Lock the event row and verify status inside the transaction.
         const [lockedEvent] = await tx.$queryRaw<
           Array<{ id: string; status: string }>
         >`SELECT "id", "status"
@@ -298,41 +311,20 @@ export const EventService = {
           throw AppError.notFound('Event');
         }
 
+        if (lockedEvent.status === 'CANCELLED') {
+          throw new AppError(
+            'ALREADY_CANCELLED' as never,
+            'Event has already been cancelled',
+            409
+          );
+        }
+
         if (lockedEvent.status === 'SETTLED') {
           throw new AppError('EVENT_ALREADY_SETTLED', 'Cannot cancel a settled event', 400);
         }
 
-        if (lockedEvent.status === 'CANCELLED') {
-          throw new AppError('EVENT_ALREADY_SETTLED', 'Event is already cancelled', 400);
-        }
-
-        // Fetch PENDING predictions inside the transaction to avoid stale reads.
-        const predictions = await tx.prediction.findMany({
-          where: {
-            eventId,
-            status: 'PENDING',
-          },
-        });
-
-        let refunded = 0;
-
-        for (const prediction of predictions) {
-          await LedgerService.refundPrediction(
-            prediction.userId,
-            prediction.stakeAmount,
-            prediction.id,
-            tx
-          );
-
-          await tx.prediction.update({
-            where: { id: prediction.id },
-            data: {
-              status: 'REFUNDED',
-              settledAt: cancelledAt,
-            },
-          });
-
-          refunded++;
+        if (lockedEvent.status !== 'OPEN' && lockedEvent.status !== 'LOCKED') {
+          throw AppError.badRequest(`Cannot cancel event with status ${lockedEvent.status}`);
         }
 
         await tx.event.update({
@@ -343,6 +335,53 @@ export const EventService = {
             settledAt: cancelledAt,
           },
         });
+
+        // Lock PENDING predictions inside the same transaction to avoid stale reads
+        // and protect against concurrent cashouts/settlements.
+        const predictions = await tx.$queryRaw<
+          Array<{
+            id: string;
+            userId: string;
+            stakeAmount: number;
+            status: string;
+          }>
+        >`SELECT "id", "userId", "stakeAmount", "status"
+          FROM "Prediction"
+          WHERE "eventId" = ${eventId} AND "status" = 'PENDING'
+          FOR UPDATE`;
+
+        let refunded = 0;
+
+        for (const prediction of predictions) {
+          if (prediction.status !== 'PENDING') {
+            continue;
+          }
+
+          const refundedUpdate = await tx.prediction.updateMany({
+            where: {
+              id: prediction.id,
+              status: 'PENDING',
+            },
+            data: {
+              status: 'REFUNDED',
+              payout: 0,
+              settledAt: cancelledAt,
+            },
+          });
+
+          if (refundedUpdate.count === 0) {
+            continue;
+          }
+
+          await LedgerService.refundPrediction(
+            prediction.userId,
+            prediction.stakeAmount,
+            prediction.id,
+            tx
+          );
+
+          refunded++;
+        }
 
         return { refunded };
       },

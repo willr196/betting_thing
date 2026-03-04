@@ -81,6 +81,8 @@ const envSchema = z.object({
   // Rate Limiting
   RATE_LIMIT_MAX: z.coerce.number().default(100),
   RATE_LIMIT_WINDOW_MINUTES: z.coerce.number().default(15),
+  LOGIN_LOCKOUT_MAX_ATTEMPTS: z.coerce.number().int().min(1).default(10),
+  LOGIN_LOCKOUT_WINDOW_MINUTES: z.coerce.number().int().min(1).default(30),
 
   // The Odds API
   THE_ODDS_API_KEY: z.string().min(1, 'THE_ODDS_API_KEY is required'),
@@ -90,6 +92,7 @@ const envSchema = z.object({
   ODDS_SYNC_INTERVAL_SECONDS: z.coerce.number().min(30).default(300),
   SETTLEMENT_INTERVAL_SECONDS: z.coerce.number().min(30).default(300),
   EVENT_IMPORT_INTERVAL_SECONDS: z.coerce.number().min(60).default(21600),
+  CASHOUT_STALENESS_THRESHOLD_MS: z.coerce.number().int().min(1).default(300000),
 });
 
 // Parse and validate environment
@@ -154,6 +157,10 @@ export const config = {
     jwtExpiresIn: env.JWT_EXPIRES_IN,
     bcryptRounds: env.BCRYPT_SALT_ROUNDS,
     refreshTokenExpiresDays: env.REFRESH_TOKEN_EXPIRES_DAYS,
+    loginLockout: {
+      maxAttempts: env.LOGIN_LOCKOUT_MAX_ATTEMPTS,
+      windowMinutes: env.LOGIN_LOCKOUT_WINDOW_MINUTES,
+    },
   },
   
   // Token Economy Rules
@@ -179,6 +186,9 @@ export const config = {
     syncIntervalSeconds: env.ODDS_SYNC_INTERVAL_SECONDS,
     settlementIntervalSeconds: env.SETTLEMENT_INTERVAL_SECONDS,
     importIntervalSeconds: env.EVENT_IMPORT_INTERVAL_SECONDS,
+  },
+  cashout: {
+    stalenessThresholdMs: env.CASHOUT_STALENESS_THRESHOLD_MS,
   },
 } as const;
 

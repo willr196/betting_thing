@@ -3,7 +3,7 @@ import { prisma } from './database.js';
 import { config } from '../config/index.js';
 import { AppError } from '../utils/index.js';
 import { TokenAllowanceService } from './tokenAllowance.js';
-import { OddsApiService } from './oddsApi.js';
+import type { NormalizedOdds } from './oddsApi.js';
 import { PointsLedgerService } from './pointsLedger.js';
 import { matchOutcomeExact, findOddsOutcome } from './outcomes.js';
 
@@ -11,7 +11,8 @@ import { matchOutcomeExact, findOddsOutcome } from './outcomes.js';
 // PREDICTION SERVICE
 // =============================================================================
 
-const CASHOUT_ODDS_MAX_AGE_MS = 5 * 60 * 1000; // 5 minutes
+const CASHOUT_ODDS_MAX_AGE_MS = config.cashout.stalenessThresholdMs;
+const PLACE_ODDS_MAX_AGE_MS = 30 * 60 * 1000; // 30 minutes
 
 export const PredictionService = {
   /**
@@ -50,10 +51,6 @@ export const PredictionService = {
       throw AppError.notFound('Event');
     }
 
-    if (!event.externalEventId || !event.externalSportKey) {
-      throw AppError.badRequest('Event is missing external odds mapping');
-    }
-
     // Validate outcome against event's possible outcomes
     const canonicalOutcome = matchOutcomeExact(event.outcomes, predictedOutcome);
     if (!canonicalOutcome) {
@@ -64,14 +61,23 @@ export const PredictionService = {
       );
     }
 
-    // Fetch live odds before the transaction (external API call)
-    const odds = await OddsApiService.getEventOdds(
-      event.externalSportKey,
-      event.externalEventId
-    );
-
+    const odds = getCachedOdds(event.currentOdds);
     if (!odds) {
-      throw new AppError('INVALID_OUTCOME', 'Unable to fetch live odds for this event', 400);
+      throw new AppError(
+        'ODDS_UNAVAILABLE' as never,
+        'Odds not yet available for this event. Please try again shortly.',
+        503
+      );
+    }
+
+    const oddsUpdatedAtMs = new Date(odds.updatedAt).getTime();
+    const oddsAgeMs = Date.now() - oddsUpdatedAtMs;
+    if (!Number.isFinite(oddsAgeMs) || oddsAgeMs > PLACE_ODDS_MAX_AGE_MS) {
+      throw new AppError(
+        'ODDS_STALE' as never,
+        'Odds data is being refreshed. Please try again in a moment.',
+        503
+      );
     }
 
     const outcomeOdds = findOddsOutcome(odds.outcomes, canonicalOutcome);
@@ -323,25 +329,23 @@ export const PredictionService = {
       throw new AppError('CASHOUT_UNAVAILABLE', 'Event is already settled', 409);
     }
 
-    if (!prediction.event.externalEventId || !prediction.event.externalSportKey) {
-      throw new AppError('CASHOUT_UNAVAILABLE', 'Event is missing odds mapping', 409);
-    }
-
-    const odds = await OddsApiService.getEventOdds(
-      prediction.event.externalSportKey,
-      prediction.event.externalEventId
-    );
-
+    const odds = getCachedOdds(prediction.event.currentOdds);
     if (!odds) {
-      throw new AppError('CASHOUT_UNAVAILABLE', 'Unable to fetch live odds', 409);
+      throw new AppError(
+        'CASHOUT_UNAVAILABLE',
+        'Odds data is unavailable for cashout. Please try again shortly.',
+        409
+      );
     }
 
-    const oddsUpdatedAtMs = new Date(odds.updatedAt).getTime();
+    const oddsUpdatedAtMs = prediction.event.oddsUpdatedAt
+      ? prediction.event.oddsUpdatedAt.getTime()
+      : new Date(odds.updatedAt).getTime();
     const oddsAgeMs = Date.now() - oddsUpdatedAtMs;
     if (!Number.isFinite(oddsAgeMs) || oddsAgeMs > CASHOUT_ODDS_MAX_AGE_MS) {
       throw new AppError(
         'CASHOUT_UNAVAILABLE',
-        'Odds data is too stale for cashout. Please try again in a moment.',
+        'Odds data is too old to cashout safely. Please try again.',
         409
       );
     }
@@ -349,7 +353,7 @@ export const PredictionService = {
     const outcomeOdds = findOddsOutcome(odds.outcomes, prediction.predictedOutcome);
 
     if (!outcomeOdds) {
-      throw new AppError('CASHOUT_UNAVAILABLE', 'Outcome not found in live odds', 409);
+      throw new AppError('CASHOUT_UNAVAILABLE', 'Outcome not found in cached odds', 409);
     }
 
     const originalOdds = prediction.originalOdds?.toNumber();
@@ -372,7 +376,7 @@ export const PredictionService = {
       originalOdds,
       eventStarted,
       oddsAge: Math.round(oddsAgeMs / 1000), // seconds
-      updatedAt: odds.updatedAt,
+      updatedAt: prediction.event.oddsUpdatedAt?.toISOString() ?? odds.updatedAt,
     };
   },
 
@@ -434,6 +438,55 @@ export function calculateCashoutValue(
   const cashoutValue = Math.floor(originalStakeTokens * (originalOdds / currentOdds) * margin);
 
   return Math.max(0, cashoutValue);
+}
+
+function getCachedOdds(currentOdds: unknown): NormalizedOdds | null {
+  if (!currentOdds || typeof currentOdds !== 'object' || Array.isArray(currentOdds)) {
+    return null;
+  }
+
+  const candidate = currentOdds as {
+    outcomes?: unknown;
+    updatedAt?: unknown;
+  };
+
+  if (!Array.isArray(candidate.outcomes) || typeof candidate.updatedAt !== 'string') {
+    return null;
+  }
+
+  const updatedAtMs = new Date(candidate.updatedAt).getTime();
+  if (!Number.isFinite(updatedAtMs)) {
+    return null;
+  }
+
+  const outcomes = candidate.outcomes.map((outcome) => {
+    if (!outcome || typeof outcome !== 'object' || Array.isArray(outcome)) {
+      return null;
+    }
+
+    const parsed = outcome as { name?: unknown; price?: unknown };
+    if (typeof parsed.name !== 'string' || typeof parsed.price !== 'number') {
+      return null;
+    }
+
+    if (!Number.isFinite(parsed.price)) {
+      return null;
+    }
+
+    return {
+      name: parsed.name,
+      price: parsed.price,
+    };
+  });
+
+  if (outcomes.some((outcome) => outcome === null)) {
+    return null;
+  }
+
+  return {
+    outcomes: outcomes as NormalizedOdds['outcomes'],
+    updatedAt: candidate.updatedAt,
+  };
 }
 
 async function lockEventForPrediction(

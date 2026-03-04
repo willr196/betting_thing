@@ -47,7 +47,15 @@ export function isAuthenticated(req: Request): req is AuthenticatedRequest {
 // =============================================================================
 
 // Safe user object without password hash, internal version, and refresh token fields
-export type SafeUser = Omit<User, 'passwordHash' | 'tokenVersion' | 'refreshTokenHash' | 'refreshTokenExpiresAt'>;
+export type SafeUser = Omit<
+  User,
+  | 'passwordHash'
+  | 'tokenVersion'
+  | 'refreshTokenHash'
+  | 'refreshTokenExpiresAt'
+  | 'failedLoginAttempts'
+  | 'loginLockoutUntil'
+>;
 
 export interface UserWithBalance extends SafeUser {
   tokenBalance: number;

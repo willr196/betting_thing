@@ -1,16 +1,37 @@
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { randomBytes, createHash } from 'crypto';
+import { Prisma, type User } from '@prisma/client';
 import { config } from '../config/index.js';
 import { prisma } from './database.js';
 import { LedgerService } from './ledger.js';
 import { TokenAllowanceService } from './tokenAllowance.js';
-import { AppError, omit } from '../utils/index.js';
+import { AppError } from '../utils/index.js';
 import type { JwtPayload, SafeUser } from '../types/index.js';
 
 // =============================================================================
 // AUTH SERVICE
 // =============================================================================
+
+function normalizeEmailKey(email: string): string {
+  return email.trim().toLowerCase();
+}
+
+function getLockoutMessage(remainingMinutes: number): string {
+  const suffix = remainingMinutes === 1 ? '' : 's';
+  return `Too many failed login attempts. Please try again in ${remainingMinutes} minute${suffix}.`;
+}
+
+function toSafeUser(user: User): SafeUser {
+  const safeUser = { ...user } as Partial<User>;
+  delete safeUser.passwordHash;
+  delete safeUser.tokenVersion;
+  delete safeUser.refreshTokenHash;
+  delete safeUser.refreshTokenExpiresAt;
+  delete safeUser.failedLoginAttempts;
+  delete safeUser.loginLockoutUntil;
+  return safeUser as SafeUser;
+}
 
 export const AuthService = {
   /**
@@ -66,7 +87,7 @@ export const AuthService = {
     const refreshToken = await this.createRefreshToken(user.id);
 
     return {
-      user: omit(user, ['passwordHash', 'refreshTokenHash', 'refreshTokenExpiresAt']),
+      user: toSafeUser(user),
       token,
       refreshToken,
     };
@@ -80,30 +101,91 @@ export const AuthService = {
     email: string,
     password: string
   ): Promise<{ user: SafeUser; token: string; refreshToken: string }> {
-    // Find user by email
-    const user = await prisma.user.findUnique({
-      where: { email: email.toLowerCase() },
+    const normalizedEmail = normalizeEmailKey(email);
+    const result = await prisma.$transaction(async (tx) => {
+      const [lockedUser] = await tx.$queryRaw<
+        Array<{
+          id: string;
+          passwordHash: string;
+          failedLoginAttempts: number;
+          loginLockoutUntil: Date | null;
+        }>
+      >`SELECT "id", "passwordHash", "failedLoginAttempts", "loginLockoutUntil"
+        FROM "User"
+        WHERE "email" = ${normalizedEmail}
+        FOR UPDATE`;
+
+      if (!lockedUser) {
+        throw new AppError('INVALID_CREDENTIALS', 'Invalid email or password', 401);
+      }
+
+      const now = new Date();
+      if (lockedUser.loginLockoutUntil && lockedUser.loginLockoutUntil > now) {
+        const remainingMinutes = Math.ceil(
+          (lockedUser.loginLockoutUntil.getTime() - now.getTime()) / (60 * 1000)
+        );
+        throw new AppError('RATE_LIMITED', getLockoutMessage(remainingMinutes), 429);
+      }
+
+      const isValidPassword = await bcrypt.compare(password, lockedUser.passwordHash);
+      if (!isValidPassword) {
+        const nextFailedAttempts = lockedUser.failedLoginAttempts + 1;
+        const maxAttempts = config.auth.loginLockout.maxAttempts;
+
+        if (nextFailedAttempts >= maxAttempts) {
+          const lockMinutes = config.auth.loginLockout.windowMinutes;
+          const lockoutUntil = new Date(now.getTime() + lockMinutes * 60 * 1000);
+
+          await tx.user.update({
+            where: { id: lockedUser.id },
+            data: {
+              failedLoginAttempts: 0,
+              loginLockoutUntil: lockoutUntil,
+            },
+          });
+
+          throw new AppError('RATE_LIMITED', getLockoutMessage(lockMinutes), 429);
+        }
+
+        await tx.user.update({
+          where: { id: lockedUser.id },
+          data: {
+            failedLoginAttempts: nextFailedAttempts,
+            loginLockoutUntil: null,
+          },
+        });
+
+        throw new AppError('INVALID_CREDENTIALS', 'Invalid email or password', 401);
+      }
+
+      if (lockedUser.failedLoginAttempts > 0 || lockedUser.loginLockoutUntil) {
+        await tx.user.update({
+          where: { id: lockedUser.id },
+          data: {
+            failedLoginAttempts: 0,
+            loginLockoutUntil: null,
+          },
+        });
+      }
+
+      const user = await tx.user.findUniqueOrThrow({
+        where: { id: lockedUser.id },
+      });
+
+      const token = this.generateToken(user);
+      const refreshToken = await this.createRefreshToken(user.id, tx);
+
+      return {
+        user,
+        token,
+        refreshToken,
+      };
     });
 
-    if (!user) {
-      throw new AppError('INVALID_CREDENTIALS', 'Invalid email or password', 401);
-    }
-
-    // Verify password
-    const isValidPassword = await bcrypt.compare(password, user.passwordHash);
-
-    if (!isValidPassword) {
-      throw new AppError('INVALID_CREDENTIALS', 'Invalid email or password', 401);
-    }
-
-    // Generate tokens
-    const token = this.generateToken(user);
-    const refreshToken = await this.createRefreshToken(user.id);
-
     return {
-      user: omit(user, ['passwordHash', 'refreshTokenHash', 'refreshTokenExpiresAt']),
-      token,
-      refreshToken,
+      user: toSafeUser(result.user),
+      token: result.token,
+      refreshToken: result.refreshToken,
     };
   },
 
@@ -127,13 +209,14 @@ export const AuthService = {
    * Create and store a new refresh token for a user.
    * Returns the raw (unhashed) token to send to the client.
    */
-  async createRefreshToken(userId: string): Promise<string> {
+  async createRefreshToken(userId: string, tx?: Prisma.TransactionClient): Promise<string> {
     const raw = randomBytes(32).toString('hex');
     const hash = createHash('sha256').update(raw).digest('hex');
     const expiresAt = new Date();
     expiresAt.setDate(expiresAt.getDate() + config.auth.refreshTokenExpiresDays);
 
-    await prisma.user.update({
+    const client = tx ?? prisma;
+    await client.user.update({
       where: { id: userId },
       data: {
         refreshTokenHash: hash,
@@ -177,7 +260,7 @@ export const AuthService = {
     return {
       token,
       refreshToken: newRefreshToken,
-      user: omit(user, ['passwordHash', 'refreshTokenHash', 'refreshTokenExpiresAt']),
+      user: toSafeUser(user),
     };
   },
 
@@ -238,7 +321,7 @@ export const AuthService = {
       return null;
     }
 
-    return omit(user, ['passwordHash', 'refreshTokenHash', 'refreshTokenExpiresAt']);
+    return toSafeUser(user);
   },
 
   /**
