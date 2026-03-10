@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../lib/api';
 import { formatDate, formatRelativeTime, getStatusColor } from '../lib/utils';
+import { LeaderboardPreview } from '../components/LeaderboardPreview';
 import { Card, Badge, Spinner, EmptyState, Button } from '../components/ui';
 import type { Event } from '../types';
 
@@ -58,6 +59,10 @@ export function EventsPage() {
             </button>
           ))}
         </div>
+      </div>
+
+      <div className="mb-6">
+        <LeaderboardPreview />
       </div>
 
       {/* Content */}

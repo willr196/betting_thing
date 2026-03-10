@@ -4,12 +4,42 @@
 
 /* Custom base styles */
 @layer base {
+  :root {
+    color-scheme: light;
+  }
+
   html {
     @apply antialiased;
   }
   
   body {
-    @apply bg-gray-50 text-gray-900;
+    @apply text-gray-900;
+    min-height: 100vh;
+    font-family: "Avenir Next", "Trebuchet MS", "Segoe UI", sans-serif;
+    background:
+      radial-gradient(circle at top left, rgba(63, 141, 131, 0.18), transparent 34%),
+      radial-gradient(circle at top right, rgba(221, 124, 30, 0.16), transparent 28%),
+      linear-gradient(180deg, #fbf7ef 0%, #f6f1e7 45%, #edf4f0 100%);
+  }
+
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    background-image:
+      linear-gradient(rgba(255, 255, 255, 0.28) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255, 255, 255, 0.24) 1px, transparent 1px);
+    background-size: 64px 64px;
+    mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.12), transparent 70%);
+  }
+
+  #root {
+    min-height: 100vh;
+  }
+
+  ::selection {
+    @apply bg-primary-200 text-gray-900;
   }
 }
 
@@ -20,6 +50,10 @@
     -webkit-line-clamp: 2;
     -webkit-box-orient: vertical;
     overflow: hidden;
+  }
+
+  .glass-panel {
+    @apply rounded-[28px] border border-white/70 bg-white/82 shadow-[0_24px_60px_-36px_rgba(15,23,42,0.35)] backdrop-blur-xl;
   }
 }
 

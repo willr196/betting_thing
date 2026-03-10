@@ -11,6 +11,7 @@ import { AchievementService } from '../services/achievements.js';
 import { requireAuth, validateBody, validateQuery, getAuthUser, emailSchema, passwordSchema } from '../middleware/index.js';
 import { asyncHandler, sendSuccess } from '../utils/index.js';
 import { config } from '../config/index.js';
+import { getNextISOWeekStart } from '../utils/week.js';
 
 const router = Router();
 
@@ -221,7 +222,7 @@ router.get(
   requireAuth,
   asyncHandler(async (req, res) => {
     const { userId } = getAuthUser(req);
-    await TokenAllowanceService.getStatus(userId);
+    await TokenAllowanceService.getOrCreateStatus(userId);
     const balance = await LedgerService.getBalance(userId);
 
     sendSuccess(res, {
@@ -325,16 +326,9 @@ router.get(
       .slice(0, 5);
 
     const lastResetDate = allowanceStatus.lastResetDate;
-    const nextResetAt = new Date(
-      Date.UTC(
-        lastResetDate.getUTCFullYear(),
-        lastResetDate.getUTCMonth(),
-        lastResetDate.getUTCDate() + 1
-      )
-    );
-    const tokensToMax = Math.max(0, config.tokens.maxAllowance - allowanceStatus.tokensRemaining);
-    const daysUntilMaxStack =
-      tokensToMax === 0 ? 0 : Math.ceil(tokensToMax / config.tokens.dailyAllowance);
+    const nextResetAt = getNextISOWeekStart(lastResetDate);
+    const msUntilReset = Math.max(0, nextResetAt.getTime() - Date.now());
+    const daysUntilReset = Math.ceil(msUntilReset / (24 * 60 * 60 * 1000));
 
     sendSuccess(res, {
       predictionStats: {
@@ -347,7 +341,7 @@ router.get(
         tokensRemaining: allowanceStatus.tokensRemaining,
         lastResetDate,
         nextResetAt,
-        daysUntilMaxStack,
+        daysUntilReset,
       },
       achievementProgress: achievementProgress.next,
     });

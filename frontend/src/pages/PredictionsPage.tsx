@@ -176,7 +176,7 @@ export function PredictionsPage() {
               <StatCard
                 label="Win Rate"
                 value={`${stats.winRate.toFixed(1)}%`}
-                subValue={`${stats.won}W - ${stats.lost}L`}
+                subValue={`${stats.won}W - ${stats.lost}L settled`}
                 trend={stats.winRate >= 50 ? 'up' : 'down'}
               />
               <StatCard

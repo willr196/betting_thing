@@ -33,6 +33,17 @@ function toSafeUser(user: User): SafeUser {
   return safeUser as SafeUser;
 }
 
+async function getUserWithFreshAllowance(
+  userId: string,
+  tx?: Prisma.TransactionClient
+): Promise<User> {
+  await TokenAllowanceService.getOrCreateStatus(userId, tx);
+  const client = tx ?? prisma;
+  return client.user.findUniqueOrThrow({
+    where: { id: userId },
+  });
+}
+
 export const AuthService = {
   /**
    * Register a new user.
@@ -74,12 +85,7 @@ export const AuthService = {
         );
       }
 
-      await TokenAllowanceService.getOrCreateStatus(newUser.id, tx);
-
-      // Return updated user with balance
-      return tx.user.findUniqueOrThrow({
-        where: { id: newUser.id },
-      });
+      return getUserWithFreshAllowance(newUser.id, tx);
     });
 
     // Generate tokens
@@ -180,9 +186,7 @@ export const AuthService = {
         });
       }
 
-      const user = await tx.user.findUniqueOrThrow({
-        where: { id: lockedUser.id },
-      });
+      const user = await getUserWithFreshAllowance(lockedUser.id, tx);
 
       const token = this.generateToken(user);
       const refreshToken = await this.createRefreshToken(user.id, tx);
@@ -265,14 +269,16 @@ export const AuthService = {
       throw new AppError('TOKEN_EXPIRED', 'Refresh token has expired', 401);
     }
 
+    const refreshedUser = await getUserWithFreshAllowance(user.id);
+
     // Issue new access token and rotate refresh token
-    const token = this.generateToken(user);
+    const token = this.generateToken(refreshedUser);
     const newRefreshToken = await this.createRefreshToken(user.id);
 
     return {
       token,
       refreshToken: newRefreshToken,
-      user: toSafeUser(user),
+      user: toSafeUser(refreshedUser),
     };
   },
 
@@ -325,15 +331,15 @@ export const AuthService = {
    * Get a user by ID (without sensitive fields).
    */
   async getUserById(userId: string): Promise<SafeUser | null> {
-    const user = await prisma.user.findUnique({
-      where: { id: userId },
-    });
-
-    if (!user) {
-      return null;
+    try {
+      const user = await getUserWithFreshAllowance(userId);
+      return toSafeUser(user);
+    } catch (error) {
+      if (error instanceof AppError && error.statusCode === 404) {
+        return null;
+      }
+      throw error;
     }
-
-    return toSafeUser(user);
   },
 
   /**

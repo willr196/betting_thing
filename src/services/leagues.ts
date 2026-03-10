@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 import { config } from '../config/index.js';
 import { AppError } from '../utils/index.js';
 import { getISOWeekKey } from '../utils/week.js';
+import { calculateWinRateRatio } from '../utils/winRate.js';
 import { prisma } from './database.js';
 import { LeagueStandingsService } from './leagueStandings.js';
 
@@ -711,10 +712,7 @@ export const LeagueService = {
       predictionsWon: row.predictionsWon,
       predictionsLost: row.predictionsLost,
       totalPredictions: row.totalPredictions,
-      winRate:
-        row.totalPredictions > 0
-          ? Number((row.predictionsWon / row.totalPredictions).toFixed(4))
-          : 0,
+      winRate: calculateWinRateRatio(row.predictionsWon, row.predictionsLost),
       updatedAt: row.updatedAt,
     }));
 

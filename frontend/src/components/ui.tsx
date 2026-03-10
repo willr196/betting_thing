@@ -12,18 +12,18 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
   ({ variant = 'primary', size = 'md', isLoading, className = '', children, disabled, ...props }, ref) => {
-    const baseStyles = 'inline-flex items-center justify-center font-medium rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed';
+    const baseStyles = 'inline-flex items-center justify-center rounded-full font-semibold transition-all duration-200 ease-out focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-[#f7f3eb] disabled:cursor-not-allowed disabled:opacity-50 active:scale-[0.99]';
     
     const variants = {
-      primary: 'bg-primary-600 text-white hover:bg-primary-700 focus:ring-primary-500',
-      secondary: 'bg-gray-100 text-gray-900 hover:bg-gray-200 focus:ring-gray-500',
-      danger: 'bg-red-600 text-white hover:bg-red-700 focus:ring-red-500',
-      ghost: 'text-gray-600 hover:bg-gray-100 focus:ring-gray-500',
+      primary: 'bg-primary-600 text-white shadow-[0_18px_32px_-20px_rgba(47,114,106,0.95)] hover:bg-primary-700 focus:ring-primary-500',
+      secondary: 'border border-gray-200 bg-white/85 text-gray-900 hover:border-gray-300 hover:bg-white focus:ring-gray-400',
+      danger: 'bg-red-600 text-white shadow-[0_18px_32px_-20px_rgba(220,38,38,0.85)] hover:bg-red-700 focus:ring-red-500',
+      ghost: 'text-gray-600 hover:bg-gray-100 focus:ring-gray-400',
     };
     
     const sizes = {
-      sm: 'px-3 py-1.5 text-sm',
-      md: 'px-4 py-2 text-sm',
+      sm: 'px-3.5 py-2 text-sm',
+      md: 'px-5 py-2.5 text-sm',
       lg: 'px-6 py-3 text-base',
     };
 
@@ -102,7 +102,7 @@ export function Card({ children, className = '', padding = 'md' }: CardProps) {
   };
 
   return (
-    <div className={`bg-white rounded-xl shadow-sm border border-gray-200 ${paddings[padding]} ${className}`}>
+    <div className={`rounded-[28px] border border-white/70 bg-white/82 shadow-[0_24px_60px_-36px_rgba(15,23,42,0.35)] backdrop-blur-xl ${paddings[padding]} ${className}`}>
       {children}
     </div>
   );
@@ -119,7 +119,7 @@ interface BadgeProps {
 
 export function Badge({ children, className = '' }: BadgeProps) {
   return (
-    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${className}`}>
+    <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold ${className}`}>
       {children}
     </span>
   );
@@ -200,11 +200,11 @@ export function StatCard({ label, value, subValue, trend }: StatCardProps) {
   };
 
   return (
-    <Card>
-      <p className="text-sm font-medium text-gray-500">{label}</p>
-      <p className="mt-1 text-2xl font-semibold text-gray-900">{value}</p>
+    <Card className="bg-white/88">
+      <p className="text-xs font-semibold uppercase tracking-[0.28em] text-gray-400">{label}</p>
+      <p className="mt-3 text-3xl font-semibold text-gray-900">{value}</p>
       {subValue && (
-        <p className={`mt-1 text-sm ${trend ? trendColors[trend] : 'text-gray-500'}`}>
+        <p className={`mt-2 text-sm ${trend ? trendColors[trend] : 'text-gray-500'}`}>
           {subValue}
         </p>
       )}

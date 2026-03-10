@@ -9,7 +9,7 @@ import {
   getTransactionColor,
   getTransactionLabel,
 } from '../lib/utils';
-import { Card, Spinner, EmptyState } from '../components/ui';
+import { Badge, Button, Card, Spinner, EmptyState } from '../components/ui';
 import type {
   TokenAllowance,
   TokenTransaction,
@@ -149,125 +149,182 @@ export function WalletPage() {
     { totalEarned: 0, totalSpent: 0 }
   );
 
+  const allowanceWindow = dashboard?.allowance ?? null;
+  const daysUntilResetLabel =
+    allowanceWindow === null
+      ? 'Loading...'
+      : allowanceWindow.daysUntilReset === 0
+        ? 'today'
+        : `${allowanceWindow.daysUntilReset} day${allowanceWindow.daysUntilReset === 1 ? '' : 's'}`;
+  const settledPredictionCount = dashboard
+    ? dashboard.predictionStats.won + dashboard.predictionStats.lost
+    : 0;
+
   return (
-    <div>
-      {/* Header */}
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">Wallet</h1>
-        <p className="text-gray-600 mt-1">Your tokens, points, and history</p>
-      </div>
-
-      {/* Balance Cards */}
-      <div className="grid grid-cols-1 gap-4 mb-6 sm:grid-cols-2">
-        <Card className="bg-gradient-to-r from-primary-500 to-accent-500 text-white">
-          <div className="text-center py-4">
-            <p className="text-white/80 text-sm uppercase tracking-wide">
-              Tokens Available
+    <div className="space-y-6">
+      <section className="relative overflow-hidden rounded-[36px] border border-white/70 bg-[linear-gradient(135deg,rgba(32,61,57,0.97),rgba(47,114,106,0.92)_52%,rgba(199,103,23,0.88))] p-6 text-white shadow-[0_36px_90px_-54px_rgba(15,23,42,0.85)] sm:p-8">
+        <div className="absolute -right-10 top-0 h-44 w-44 rounded-full bg-white/10 blur-3xl" />
+        <div className="absolute bottom-0 left-0 h-36 w-36 rounded-full bg-white/10 blur-3xl" />
+        <div className="relative grid gap-6 lg:grid-cols-[1.1fr_0.9fr] lg:items-end">
+          <div>
+            <p className="text-xs uppercase tracking-[0.34em] text-white/60">Wallet</p>
+            <h1 className="mt-3 max-w-2xl text-3xl font-semibold leading-tight sm:text-4xl">
+              Weekly tokens, cleaner stats, and a sharper balance view.
+            </h1>
+            <p className="mt-3 max-w-2xl text-sm text-white/78 sm:text-base">
+              Your free-play tokens now refresh on the weekly cycle after Sunday, and win rate is
+              based only on settled wins and losses.
             </p>
-            <p className="text-5xl font-bold my-2">
-              {formatTokens(tokenBalance)}
-            </p>
-            <p className="text-white/80">tokens</p>
-            {dashboard && (
-              <>
-                <p className="mt-2 text-xs text-white/80">
-                  Next reset: {formatDate(dashboard.allowance.nextResetAt)}
-                </p>
-                <p className="text-xs text-white/80">
-                  Days to max stack: {dashboard.allowance.daysUntilMaxStack}
-                </p>
-              </>
-            )}
+            <div className="mt-5 flex flex-wrap gap-2">
+              <Badge className="border border-white/20 bg-white/10 text-white">
+                Weekly reset after Sunday
+              </Badge>
+              <Badge className="border border-white/20 bg-white/10 text-white">
+                Settled bets only
+              </Badge>
+              {allowanceWindow && (
+                <Badge className="border border-white/20 bg-white/10 text-white">
+                  Next refill {formatDate(allowanceWindow.nextResetAt)}
+                </Badge>
+              )}
+            </div>
           </div>
-        </Card>
-        <Card className="bg-gradient-to-r from-emerald-500 to-teal-500 text-white">
-          <div className="text-center py-4">
-            <p className="text-white/80 text-sm uppercase tracking-wide">
-              Points Balance
-            </p>
-            <p className="text-5xl font-bold my-2">
-              {formatPoints(pointsBalance)}
-            </p>
-            <p className="text-white/80">points</p>
-          </div>
-        </Card>
-      </div>
 
-      {/* Token Stats */}
-      <div className="grid grid-cols-2 gap-4 mb-6">
-        <Card>
-          <p className="text-sm text-gray-500">Total Earned</p>
-          <p className="text-2xl font-bold text-green-600">
-            +{formatTokens(tokenStats.totalEarned)}
-          </p>
-        </Card>
-        <Card>
-          <p className="text-sm text-gray-500">Total Spent</p>
-          <p className="text-2xl font-bold text-red-600">
-            -{formatTokens(tokenStats.totalSpent)}
-          </p>
-        </Card>
-      </div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <HeroBalanceCard
+              label="Tokens live"
+              value={formatTokens(tokenBalance)}
+              footer={
+                allowanceWindow
+                  ? `Resets in ${daysUntilResetLabel}`
+                  : 'Loading allowance window'
+              }
+            />
+            <HeroBalanceCard
+              label="Points banked"
+              value={formatPoints(pointsBalance)}
+              footer="Earned from wins and cashouts"
+            />
+            <HeroBalanceCard
+              label="Token earned"
+              value={`+${formatTokens(tokenStats.totalEarned)}`}
+              footer="All-time credits in wallet history"
+              tone="warm"
+            />
+            <HeroBalanceCard
+              label="Token spent"
+              value={`-${formatTokens(tokenStats.totalSpent)}`}
+              footer="Predictions and redemptions"
+              tone="warm"
+            />
+          </div>
+        </div>
+      </section>
 
       {dashboard && (
         <>
-          <div className="grid gap-4 mb-6 sm:grid-cols-2 lg:grid-cols-4">
-            <Card>
-              <p className="text-sm text-gray-500">Total Predictions</p>
-              <p className="text-2xl font-semibold text-gray-900">
-                {dashboard.predictionStats.total}
-              </p>
-            </Card>
-            <Card>
-              <p className="text-sm text-gray-500">Wins / Losses</p>
-              <p className="text-2xl font-semibold text-gray-900">
-                {dashboard.predictionStats.won}/{dashboard.predictionStats.lost}
-              </p>
-            </Card>
-            <Card>
-              <p className="text-sm text-gray-500">Win Rate</p>
-              <p className="text-2xl font-semibold text-emerald-700">
-                {dashboard.predictionStats.winRate.toFixed(1)}%
-              </p>
-            </Card>
-            <Card>
-              <p className="text-sm text-gray-500">Total Points Earned</p>
-              <p className="text-2xl font-semibold text-primary-700">
-                {formatPoints(dashboard.predictionStats.totalPointsEarned)}
-              </p>
-            </Card>
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+            <WalletStatCard
+              label="Total Predictions"
+              value={dashboard.predictionStats.total}
+              detail={`${dashboard.predictionStats.pending} still pending`}
+            />
+            <WalletStatCard
+              label="Wins / Losses"
+              value={`${dashboard.predictionStats.won}/${dashboard.predictionStats.lost}`}
+              detail={`${settledPredictionCount} settled results`}
+            />
+            <WalletStatCard
+              label="Win Rate"
+              value={`${dashboard.predictionStats.winRate.toFixed(1)}%`}
+              detail="Calculated from wins and losses only"
+              tone="success"
+            />
+            <WalletStatCard
+              label="Total Points Earned"
+              value={formatPoints(dashboard.predictionStats.totalPointsEarned)}
+              detail={`${formatPoints(dashboard.predictionStats.totalWinnings)} raw winnings`}
+              tone="brand"
+            />
+            <WalletStatCard
+              label="Current Streak"
+              value={dashboard.streak.current}
+              detail={`Longest streak ${dashboard.streak.longest}`}
+              tone={dashboard.streak.current >= 3 ? 'accent' : 'default'}
+            />
           </div>
 
-          <div className="grid gap-4 mb-6 lg:grid-cols-2">
-            <Card>
-              <h2 className="mb-3 font-semibold text-gray-900">Streak</h2>
-              <p
-                className={`text-3xl font-bold ${
-                  dashboard.streak.current >= 3 ? 'text-amber-600 animate-pulse' : 'text-gray-900'
-                }`}
-              >
-                🔥 {dashboard.streak.current}
-              </p>
-              <p className="mt-2 text-sm text-gray-600">
-                Longest streak: {dashboard.streak.longest}
-              </p>
+          <div className="grid gap-4 lg:grid-cols-[0.95fr_1.05fr]">
+            <Card className="overflow-hidden bg-white/88">
+              <div className="mb-4 flex items-center justify-between">
+                <div>
+                  <p className="text-xs uppercase tracking-[0.28em] text-gray-400">Momentum</p>
+                  <h2 className="mt-2 text-xl font-semibold text-gray-900">Weekly Token Cycle</h2>
+                </div>
+                <div className="rounded-full border border-primary-100 bg-primary-50 px-3 py-1 text-xs font-semibold text-primary-700">
+                  Refreshes Monday 00:00 UTC
+                </div>
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="rounded-[24px] border border-primary-100 bg-primary-50/70 p-4">
+                  <p className="text-sm text-primary-700">Available now</p>
+                  <p className="mt-2 text-3xl font-semibold text-gray-900">
+                    {allowance?.tokensRemaining ?? tokenBalance}
+                  </p>
+                  <p className="mt-2 text-sm text-gray-600">Spend across the full weekly window.</p>
+                </div>
+                <div className="rounded-[24px] border border-amber-100 bg-amber-50/80 p-4">
+                  <p className="text-sm text-amber-800">Next refill</p>
+                  <p className="mt-2 text-lg font-semibold text-gray-900">
+                    {formatDate(dashboard.allowance.nextResetAt)}
+                  </p>
+                  <p className="mt-2 text-sm text-gray-600">Refreshes in {daysUntilResetLabel}.</p>
+                </div>
+                <div className="rounded-[24px] border border-gray-200 bg-white/70 p-4">
+                  <p className="text-sm text-gray-500">Current cycle began</p>
+                  <p className="mt-2 text-lg font-semibold text-gray-900">
+                    {formatDate(dashboard.allowance.lastResetDate)}
+                  </p>
+                </div>
+                <div className="rounded-[24px] border border-gray-200 bg-white/70 p-4">
+                  <p className="text-sm text-gray-500">Allowance status</p>
+                  <p className="mt-2 text-lg font-semibold text-gray-900">
+                    {dashboard.allowance.daysUntilReset === 0 ? 'Refill day' : 'Live week'}
+                  </p>
+                  <p className="mt-2 text-sm text-gray-600">
+                    Free tokens refill after Sunday ends.
+                  </p>
+                </div>
+              </div>
             </Card>
 
-            <Card>
-              <h2 className="mb-3 font-semibold text-gray-900">Recent Activity</h2>
+            <Card className="overflow-hidden bg-white/88">
+              <div className="mb-4 flex items-center justify-between">
+                <div>
+                  <p className="text-xs uppercase tracking-[0.28em] text-gray-400">Flow</p>
+                  <h2 className="mt-2 text-xl font-semibold text-gray-900">Recent Activity</h2>
+                </div>
+                <div className="rounded-full border border-gray-200 bg-white px-3 py-1 text-xs font-medium text-gray-500">
+                  Latest 5 events
+                </div>
+              </div>
               {dashboard.recentActivity.length === 0 ? (
                 <p className="text-sm text-gray-500">No recent activity yet.</p>
               ) : (
-                <div className="space-y-2">
+                <div className="space-y-3">
                   {dashboard.recentActivity.map((activity) => (
-                    <div key={`${activity.currency}-${activity.id}`} className="flex items-center justify-between text-sm">
-                      <div>
-                        <p className="font-medium text-gray-800">
+                    <div
+                      key={`${activity.currency}-${activity.id}`}
+                      className="flex items-center justify-between rounded-[22px] border border-gray-100 bg-gray-50/80 px-4 py-3 text-sm"
+                    >
+                      <div className="min-w-0 pr-4">
+                        <p className="truncate font-medium text-gray-800">
                           {activity.currency === 'TOKENS' ? '🪙' : '🏆'} {getTransactionLabel(activity.type)}
                         </p>
-                        <p className="text-xs text-gray-500">{formatRelativeTime(activity.createdAt)}</p>
+                        <p className="mt-1 text-xs text-gray-500">{formatRelativeTime(activity.createdAt)}</p>
                       </div>
-                      <p className={getTransactionColor(activity.amount)}>
+                      <p className={`shrink-0 font-semibold ${getTransactionColor(activity.amount)}`}>
                         {activity.amount > 0 ? '+' : ''}
                         {activity.currency === 'TOKENS'
                           ? formatTokens(activity.amount)
@@ -280,15 +337,18 @@ export function WalletPage() {
             </Card>
           </div>
 
-          <div className="grid gap-4 mb-6 lg:grid-cols-2">
-            <Card>
-              <h2 className="mb-4 font-semibold text-gray-900">Closest Achievements</h2>
+          <div className="grid gap-4 lg:grid-cols-2">
+            <Card className="bg-white/88">
+              <div className="mb-4">
+                <p className="text-xs uppercase tracking-[0.28em] text-gray-400">Progress</p>
+                <h2 className="mt-2 text-xl font-semibold text-gray-900">Closest Achievements</h2>
+              </div>
               {dashboard.achievementProgress.length === 0 ? (
                 <p className="text-sm text-gray-500">All achievements unlocked.</p>
               ) : (
                 <div className="space-y-3">
                   {dashboard.achievementProgress.map((item) => (
-                    <div key={item.key}>
+                    <div key={item.key} className="rounded-[22px] border border-gray-100 bg-gray-50/70 p-4">
                       <div className="mb-1 flex items-center justify-between text-sm">
                         <p className="font-medium text-gray-800">
                           {item.iconEmoji} {item.name}
@@ -297,7 +357,7 @@ export function WalletPage() {
                           {item.currentValue}/{item.threshold}
                         </p>
                       </div>
-                      <div className="h-2 overflow-hidden rounded-full bg-gray-100">
+                      <div className="mt-3 h-2.5 overflow-hidden rounded-full bg-white">
                         <div
                           className="h-full rounded-full bg-primary-500"
                           style={{ width: `${item.progress}%` }}
@@ -308,27 +368,20 @@ export function WalletPage() {
                 </div>
               )}
             </Card>
-
-            <Card>
-              <h2 className="mb-4 font-semibold text-gray-900">Daily Allowance Status</h2>
-              <div className="space-y-2 text-sm">
-                <p className="text-gray-700">
-                  Tokens remaining: <span className="font-semibold">{allowance?.tokensRemaining ?? 0}</span>
-                </p>
-                <p className="text-gray-700">
-                  Next reset: <span className="font-semibold">{formatDate(dashboard.allowance.nextResetAt)}</span>
-                </p>
-                <p className="text-gray-700">
-                  Days until max stack: <span className="font-semibold">{dashboard.allowance.daysUntilMaxStack}</span>
-                </p>
-              </div>
-            </Card>
           </div>
         </>
       )}
 
-      <Card className="mb-6">
-        <h2 className="mb-4 font-semibold text-gray-900">Achievements</h2>
+      <Card className="bg-white/88">
+        <div className="mb-4 flex items-center justify-between gap-4">
+          <div>
+            <p className="text-xs uppercase tracking-[0.28em] text-gray-400">Collection</p>
+            <h2 className="mt-2 text-xl font-semibold text-gray-900">Achievements</h2>
+          </div>
+          <div className="rounded-full border border-gray-200 bg-white px-3 py-1 text-xs font-medium text-gray-500">
+            {achievements.length} tracked
+          </div>
+        </div>
         {achievements.length === 0 ? (
           <p className="text-sm text-gray-500">No achievements yet.</p>
         ) : (
@@ -338,8 +391,10 @@ export function WalletPage() {
               return (
                 <div
                   key={achievement.key}
-                  className={`rounded-lg border p-3 ${
-                    unlocked ? 'border-emerald-200 bg-emerald-50' : 'border-gray-200 bg-gray-50'
+                  className={`rounded-[24px] border p-4 transition-transform duration-200 hover:-translate-y-0.5 ${
+                    unlocked
+                      ? 'border-emerald-200 bg-[linear-gradient(135deg,rgba(236,253,245,0.95),rgba(209,250,229,0.8))]'
+                      : 'border-gray-200 bg-gray-50/80'
                   }`}
                 >
                   <p className="font-medium text-gray-900">
@@ -362,14 +417,13 @@ export function WalletPage() {
         )}
       </Card>
 
-      {/* History Tabs */}
-      <div className="flex gap-2 mb-4">
+      <div className="inline-flex rounded-full border border-white/70 bg-white/80 p-1 shadow-[0_18px_40px_-30px_rgba(15,23,42,0.35)]">
         <button
           onClick={() => setActiveTab('tokens')}
-          className={`px-4 py-2 font-medium rounded-lg transition-colors ${
+          className={`rounded-full px-4 py-2 text-sm font-semibold transition-colors ${
             activeTab === 'tokens'
-              ? 'bg-primary-600 text-white'
-              : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+              ? 'bg-primary-600 text-white shadow-[0_18px_30px_-20px_rgba(47,114,106,0.9)]'
+              : 'text-gray-600 hover:bg-gray-100'
           }`}
         >
           Token History
@@ -379,10 +433,10 @@ export function WalletPage() {
         </button>
         <button
           onClick={() => setActiveTab('points')}
-          className={`px-4 py-2 font-medium rounded-lg transition-colors ${
+          className={`rounded-full px-4 py-2 text-sm font-semibold transition-colors ${
             activeTab === 'points'
-              ? 'bg-emerald-600 text-white'
-              : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+              ? 'bg-emerald-600 text-white shadow-[0_18px_30px_-20px_rgba(5,150,105,0.9)]'
+              : 'text-gray-600 hover:bg-gray-100'
           }`}
         >
           Points History
@@ -392,12 +446,17 @@ export function WalletPage() {
         </button>
       </div>
 
-      {/* Token History */}
       {activeTab === 'tokens' && (
-        <Card>
-          <h2 className="font-semibold text-gray-900 mb-4">
-            Token Transactions
-          </h2>
+        <Card className="bg-white/88">
+          <div className="mb-4 flex items-center justify-between">
+            <div>
+              <p className="text-xs uppercase tracking-[0.28em] text-gray-400">Ledger</p>
+              <h2 className="mt-2 text-xl font-semibold text-gray-900">Token Transactions</h2>
+            </div>
+            <div className="rounded-full border border-gray-200 bg-white px-3 py-1 text-xs font-medium text-gray-500">
+              {tokenTotal} total
+            </div>
+          </div>
 
           {isLoading ? (
             <div className="flex justify-center py-8">
@@ -406,12 +465,7 @@ export function WalletPage() {
           ) : error ? (
             <div className="text-center py-8">
               <p className="text-red-600 mb-4">{error}</p>
-              <button
-                onClick={loadWalletData}
-                className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700"
-              >
-                Retry
-              </button>
+              <Button onClick={loadWalletData}>Retry</Button>
             </div>
           ) : transactions.length === 0 ? (
             <EmptyState
@@ -430,7 +484,7 @@ export function WalletPage() {
                   <button
                     onClick={loadMoreTokens}
                     disabled={isLoadingMore}
-                    className="px-4 py-2 text-sm font-medium text-primary-600 hover:text-primary-800 disabled:opacity-50"
+                    className="rounded-full px-4 py-2 text-sm font-semibold text-primary-700 transition-colors hover:bg-primary-50 disabled:opacity-50"
                   >
                     {isLoadingMore ? 'Loading...' : 'Load more'}
                   </button>
@@ -441,12 +495,17 @@ export function WalletPage() {
         </Card>
       )}
 
-      {/* Points History */}
       {activeTab === 'points' && (
-        <Card>
-          <h2 className="font-semibold text-gray-900 mb-4">
-            Points Transactions
-          </h2>
+        <Card className="bg-white/88">
+          <div className="mb-4 flex items-center justify-between">
+            <div>
+              <p className="text-xs uppercase tracking-[0.28em] text-gray-400">Ledger</p>
+              <h2 className="mt-2 text-xl font-semibold text-gray-900">Points Transactions</h2>
+            </div>
+            <div className="rounded-full border border-gray-200 bg-white px-3 py-1 text-xs font-medium text-gray-500">
+              {pointsTotal} total
+            </div>
+          </div>
 
           {isPointsLoading ? (
             <div className="flex justify-center py-8">
@@ -469,7 +528,7 @@ export function WalletPage() {
                   <button
                     onClick={loadMorePoints}
                     disabled={isLoadingMorePoints}
-                    className="px-4 py-2 text-sm font-medium text-emerald-600 hover:text-emerald-800 disabled:opacity-50"
+                    className="rounded-full px-4 py-2 text-sm font-semibold text-emerald-700 transition-colors hover:bg-emerald-50 disabled:opacity-50"
                   >
                     {isLoadingMorePoints ? 'Loading...' : 'Load more'}
                   </button>
@@ -480,6 +539,59 @@ export function WalletPage() {
         </Card>
       )}
     </div>
+  );
+}
+
+function HeroBalanceCard({
+  label,
+  value,
+  footer,
+  tone = 'cool',
+}: {
+  label: string;
+  value: string;
+  footer: string;
+  tone?: 'cool' | 'warm';
+}) {
+  return (
+    <div
+      className={`rounded-[28px] border p-5 backdrop-blur ${
+        tone === 'warm'
+          ? 'border-white/10 bg-black/10'
+          : 'border-white/15 bg-white/10'
+      }`}
+    >
+      <p className="text-sm uppercase tracking-[0.18em] text-white/60">{label}</p>
+      <p className="mt-3 text-3xl font-semibold text-white">{value}</p>
+      <p className="mt-2 text-sm text-white/72">{footer}</p>
+    </div>
+  );
+}
+
+function WalletStatCard({
+  label,
+  value,
+  detail,
+  tone = 'default',
+}: {
+  label: string;
+  value: string | number;
+  detail: string;
+  tone?: 'default' | 'brand' | 'success' | 'accent';
+}) {
+  const valueClasses = {
+    default: 'text-gray-900',
+    brand: 'text-primary-700',
+    success: 'text-emerald-700',
+    accent: 'text-amber-700',
+  };
+
+  return (
+    <Card className="bg-white/88">
+      <p className="text-xs uppercase tracking-[0.28em] text-gray-400">{label}</p>
+      <p className={`mt-3 text-3xl font-semibold ${valueClasses[tone]}`}>{value}</p>
+      <p className="mt-2 text-sm text-gray-500">{detail}</p>
+    </Card>
   );
 }
 
@@ -509,7 +621,7 @@ function TokenTransactionRow({ transaction }: { transaction: TokenTransaction })
   };
 
   return (
-    <div className="flex items-center justify-between py-3">
+    <div className="flex items-center justify-between rounded-[22px] px-2 py-3 transition-colors hover:bg-black/[0.015]">
       <div className="flex items-center gap-3">
         <span className="text-xl">{getIcon(transaction.type)}</span>
         <div>
@@ -571,7 +683,7 @@ function PointsTransactionRow({ transaction }: { transaction: PointsTransaction 
   };
 
   return (
-    <div className="flex items-center justify-between py-3">
+    <div className="flex items-center justify-between rounded-[22px] px-2 py-3 transition-colors hover:bg-black/[0.015]">
       <div className="flex items-center gap-3">
         <span className="text-xl">{getIcon(transaction.type)}</span>
         <div>

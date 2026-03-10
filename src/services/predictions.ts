@@ -7,6 +7,7 @@ import { OddsApiService, type NormalizedOdds } from './oddsApi.js';
 import { PointsLedgerService } from './pointsLedger.js';
 import { matchOutcomeExact, findOddsOutcome } from './outcomes.js';
 import { logger } from '../logger.js';
+import { calculateWinRatePercent } from '../utils/winRate.js';
 
 // =============================================================================
 // PREDICTION SERVICE
@@ -292,7 +293,7 @@ export const PredictionService = {
       lost,
       pending,
       cashedOut,
-      winRate: (won + lost) > 0 ? (won / (won + lost)) * 100 : 0,
+      winRate: calculateWinRatePercent(won, lost),
       totalWinnings: winnings._sum.payout ?? 0,
       totalStaked: stakes._sum.stakeAmount ?? 0,
     };

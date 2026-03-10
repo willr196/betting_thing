@@ -71,6 +71,20 @@ function PublicRoute({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+function OpenRoute({ children }: { children: React.ReactNode }) {
+  const { isLoading } = useAuth();
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <Spinner size="lg" />
+      </div>
+    );
+  }
+
+  return <>{children}</>;
+}
+
 // =============================================================================
 // APP ROUTES
 // =============================================================================
@@ -101,6 +115,17 @@ function AppRoutes() {
         <Route index element={<ErrorBoundary><RegisterPage /></ErrorBoundary>} />
       </Route>
 
+      <Route
+        path="/leaderboard"
+        element={
+          <OpenRoute>
+            <Layout />
+          </OpenRoute>
+        }
+      >
+        <Route index element={<ErrorBoundary><LeaderboardPage /></ErrorBoundary>} />
+      </Route>
+
       {/* Protected routes */}
       <Route
         path="/"
@@ -115,7 +140,6 @@ function AppRoutes() {
         <Route path="events/:id" element={<ErrorBoundary><EventDetailPage /></ErrorBoundary>} />
         <Route path="football" element={<ErrorBoundary><FootballPage /></ErrorBoundary>} />
         <Route path="predictions" element={<ErrorBoundary><PredictionsPage /></ErrorBoundary>} />
-        <Route path="leaderboard" element={<ErrorBoundary><LeaderboardPage /></ErrorBoundary>} />
         <Route path="leagues" element={<ErrorBoundary><LeaguesPage /></ErrorBoundary>} />
         <Route path="leagues/join" element={<ErrorBoundary><LeagueJoinPage /></ErrorBoundary>} />
         <Route path="leagues/:id" element={<ErrorBoundary><LeagueDetailPage /></ErrorBoundary>} />

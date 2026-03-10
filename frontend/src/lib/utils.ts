@@ -68,7 +68,7 @@ export function getTransactionColor(amount: number): string {
 
 export function getTransactionLabel(type: string): string {
   const labels: Record<string, string> = {
-    DAILY_ALLOWANCE: 'Daily Allowance',
+    DAILY_ALLOWANCE: 'Weekly Reset',
     SIGNUP_BONUS: 'Signup Bonus',
     PREDICTION_STAKE: 'Prediction Stake',
     PREDICTION_WIN: 'Prediction Win',

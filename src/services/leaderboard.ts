@@ -4,6 +4,7 @@ import { prisma } from './database.js';
 import { LedgerService } from './ledger.js';
 import { TokenAllowanceService } from './tokenAllowance.js';
 import { AppError } from '../utils/index.js';
+import { calculateWinRateRatio } from '../utils/winRate.js';
 
 type RankedLeaderboardRow = {
   rank: number | bigint;
@@ -64,13 +65,6 @@ function periodKeyFor(period: LeaderboardPeriod, now = new Date()): string {
   return 'all-time';
 }
 
-function computeWinRate(wins: number, totalPredictions: number): number {
-  if (totalPredictions <= 0) {
-    return 0;
-  }
-  return Number((wins / totalPredictions).toFixed(4));
-}
-
 function streakBonusFor(streak: number): number {
   if (streak === 10) return 10;
   if (streak === 5) return 5;
@@ -113,7 +107,7 @@ async function updateLeaderboardPeriod(
   const totalPointsWon = (existing?.totalPointsWon ?? 0) + pointsWon;
   const currentStreak = won ? (existing?.currentStreak ?? 0) + 1 : 0;
   const longestStreak = Math.max(existing?.longestStreak ?? 0, currentStreak);
-  const winRate = computeWinRate(wins, totalPredictions);
+  const winRate = calculateWinRateRatio(wins, losses);
 
   await tx.$executeRaw`
     INSERT INTO "Leaderboard" (

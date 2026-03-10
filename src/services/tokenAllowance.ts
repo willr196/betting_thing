@@ -3,28 +3,22 @@ import { prisma } from './database.js';
 import { config } from '../config/index.js';
 import { LedgerService } from './ledger.js';
 import { AppError } from '../utils/index.js';
+import { getStartOfISOWeek } from '../utils/week.js';
 
 // =============================================================================
 // TOKEN ALLOWANCE SERVICE
 // =============================================================================
 
-function startOfUtcDay(date: Date): Date {
-  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
-}
-
-function daysBetween(start: Date, end: Date): number {
-  const ms = end.getTime() - start.getTime();
-  return Math.floor(ms / (1000 * 60 * 60 * 24));
+function getAllowanceWeekStart(date: Date): Date {
+  return getStartOfISOWeek(date);
 }
 
 export const TokenAllowanceService = {
   /**
-   * Read-only: returns the current allowance state without any mutations.
-   * Use for informational endpoints (e.g. GET /auth/balance) where triggering
-   * a daily credit write would be a side-effect on a read request.
+   * Read-mostly status lookup used by internal balance checks.
    */
   async getStatus(userId: string) {
-    const today = startOfUtcDay(new Date());
+    const weekStart = getAllowanceWeekStart(new Date());
     const [allowance, user] = await Promise.all([
       prisma.tokenAllowance.findUnique({
         where: { userId },
@@ -45,7 +39,7 @@ export const TokenAllowanceService = {
         data: {
           userId,
           tokensRemaining: user.tokenBalance,
-          lastResetDate: today,
+          lastResetDate: weekStart,
         },
         select: { tokensRemaining: true, lastResetDate: true },
       });
@@ -143,7 +137,7 @@ export const TokenAllowanceService = {
         create: {
           userId,
           tokensRemaining: user.tokenBalance,
-          lastResetDate: startOfUtcDay(new Date()),
+          lastResetDate: getAllowanceWeekStart(new Date()),
         },
       });
 
@@ -159,17 +153,17 @@ export const TokenAllowanceService = {
 };
 
 async function ensureAllowance(userId: string, tx: Prisma.TransactionClient) {
-  const today = startOfUtcDay(new Date());
-
+  const currentWeekStart = getAllowanceWeekStart(new Date());
+  const currentBalance = await lockUserBalanceForUpdate(tx, userId);
   const allowance = await lockAllowanceForUser(tx, userId);
 
   if (!allowance) {
     const credit = await LedgerService.credit(
       {
         userId,
-        amount: config.tokens.dailyAllowance,
+        amount: config.tokens.maxAllowance,
         type: 'DAILY_ALLOWANCE',
-        description: 'Daily token allowance',
+        description: 'Weekly token reset',
       },
       tx
     );
@@ -178,20 +172,18 @@ async function ensureAllowance(userId: string, tx: Prisma.TransactionClient) {
       data: {
         userId,
         tokensRemaining: credit.newBalance,
-        lastResetDate: today,
+        lastResetDate: currentWeekStart,
       },
     });
 
-    return { tokensRemaining: credit.newBalance, lastResetDate: today };
+    return { tokensRemaining: credit.newBalance, lastResetDate: currentWeekStart };
   }
 
-  const daysSinceReset = daysBetween(startOfUtcDay(allowance.lastResetDate), today);
+  const normalizedLastResetDate = getAllowanceWeekStart(allowance.lastResetDate);
+  const needsWeeklyReset = normalizedLastResetDate.getTime() < currentWeekStart.getTime();
 
-  if (daysSinceReset > 0) {
-    const tokensToAdd = calculateAllowanceTopUp(
-      allowance.tokensRemaining,
-      daysSinceReset
-    );
+  if (needsWeeklyReset) {
+    const tokensToAdd = calculateWeeklyRefill(currentBalance);
 
     if (tokensToAdd > 0) {
       const credit = await LedgerService.credit(
@@ -199,26 +191,38 @@ async function ensureAllowance(userId: string, tx: Prisma.TransactionClient) {
           userId,
           amount: tokensToAdd,
           type: 'DAILY_ALLOWANCE',
-          description: 'Daily token allowance',
+          description: 'Weekly token reset',
         },
         tx
       );
 
       await upsertAllowance(tx, userId, {
         tokensRemaining: credit.newBalance,
-        lastResetDate: today,
+        lastResetDate: currentWeekStart,
       });
 
-      return { tokensRemaining: credit.newBalance, lastResetDate: today };
+      return { tokensRemaining: credit.newBalance, lastResetDate: currentWeekStart };
     }
 
     await upsertAllowance(tx, userId, {
-      tokensRemaining: allowance.tokensRemaining,
-      lastResetDate: today,
+      tokensRemaining: currentBalance,
+      lastResetDate: currentWeekStart,
+    });
+
+    return { tokensRemaining: currentBalance, lastResetDate: currentWeekStart };
+  }
+
+  if (
+    allowance.tokensRemaining !== currentBalance ||
+    allowance.lastResetDate.getTime() !== normalizedLastResetDate.getTime()
+  ) {
+    await upsertAllowance(tx, userId, {
+      tokensRemaining: currentBalance,
+      lastResetDate: normalizedLastResetDate,
     });
   }
 
-  return { tokensRemaining: allowance.tokensRemaining, lastResetDate: allowance.lastResetDate };
+  return { tokensRemaining: currentBalance, lastResetDate: normalizedLastResetDate };
 }
 
 async function upsertAllowance(
@@ -237,11 +241,8 @@ async function upsertAllowance(
   });
 }
 
-function calculateAllowanceTopUp(tokensRemaining: number, daysSinceReset: number): number {
-  return Math.min(
-    daysSinceReset * config.tokens.dailyAllowance,
-    Math.max(0, config.tokens.maxAllowance - tokensRemaining)
-  );
+function calculateWeeklyRefill(tokensRemaining: number): number {
+  return Math.max(0, config.tokens.maxAllowance - tokensRemaining);
 }
 
 async function lockAllowanceForUser(
@@ -255,4 +256,22 @@ async function lockAllowanceForUser(
     WHERE "userId" = ${userId}
     FOR UPDATE`;
   return allowance ?? null;
+}
+
+async function lockUserBalanceForUpdate(
+  tx: Prisma.TransactionClient,
+  userId: string
+): Promise<number> {
+  const [user] = await tx.$queryRaw<Array<{ tokenBalance: number }>>`
+    SELECT "tokenBalance"
+    FROM "User"
+    WHERE "id" = ${userId}
+    FOR UPDATE
+  `;
+
+  if (!user) {
+    throw AppError.notFound('User');
+  }
+
+  return user.tokenBalance;
 }

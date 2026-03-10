@@ -1,9 +1,23 @@
 const ISO_WEEK_KEY_REGEX = /^(\d{4})-W(\d{2})$/;
 const MS_IN_DAY = 24 * 60 * 60 * 1000;
 
+export function getStartOfISOWeek(date: Date = new Date()): Date {
+  const day = date.getUTCDay() || 7;
+  const monday = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+  monday.setUTCDate(monday.getUTCDate() - day + 1);
+  monday.setUTCHours(0, 0, 0, 0);
+  return monday;
+}
+
+export function getNextISOWeekStart(date: Date = new Date()): Date {
+  const nextWeek = getStartOfISOWeek(date);
+  nextWeek.setUTCDate(nextWeek.getUTCDate() + 7);
+  return nextWeek;
+}
+
 export function getISOWeekKey(date: Date = new Date()): string {
-  const d = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
-  d.setUTCDate(d.getUTCDate() + 4 - (d.getUTCDay() || 7));
+  const d = getStartOfISOWeek(date);
+  d.setUTCDate(d.getUTCDate() + 3);
   const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
   const weekNo = Math.ceil((((d.getTime() - yearStart.getTime()) / MS_IN_DAY) + 1) / 7);
   return `${d.getUTCFullYear()}-W${String(weekNo).padStart(2, '0')}`;
@@ -41,4 +55,3 @@ export function getPreviousWeekKey(weekKey: string): string {
   const previousWeekDate = new Date(start.getTime() - 7 * MS_IN_DAY);
   return getISOWeekKey(previousWeekDate);
 }
-

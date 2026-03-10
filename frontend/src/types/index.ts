@@ -274,7 +274,7 @@ export interface DashboardStats {
     tokensRemaining: number;
     lastResetDate: string;
     nextResetAt: string;
-    daysUntilMaxStack: number;
+    daysUntilReset: number;
   };
   achievementProgress: Achievement[];
 }
