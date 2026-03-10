@@ -43,6 +43,10 @@ export const AccumulatorService = {
     }
 
     const uniqueEventIds = [...new Set(legs.map((leg) => leg.eventId))];
+    if (uniqueEventIds.length !== legs.length) {
+      throw AppError.badRequest('Accumulator selections must be from different events');
+    }
+
     const events = await prisma.event.findMany({
       where: { id: { in: uniqueEventIds } },
     });

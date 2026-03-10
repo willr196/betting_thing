@@ -69,8 +69,10 @@ export function EventDetailPage() {
         (item) => item.name.trim().toLowerCase() === outcome.trim().toLowerCase()
       )?.price ?? event.payoutMultiplier;
 
-    addSelection(event.id, event.title, outcome, outcomeOdds);
-    showSuccess(`Added "${outcome}" to your bet slip`);
+    addSelection(event.id, event.title, outcome, outcomeOdds, {
+      replaceExistingForEvent: true,
+    });
+    showSuccess(`Selected "${outcome}" for ${event.title}`);
   };
 
   if (isLoading) {

@@ -263,12 +263,16 @@ class ApiClient {
   async getEvents(params?: {
     status?: string;
     upcoming?: boolean;
+    sportKey?: string;
+    sportKeyPrefix?: string;
     limit?: number;
     offset?: number;
   }): Promise<{ events: Event[]; total: number }> {
     const searchParams = new URLSearchParams();
     if (params?.status) searchParams.set('status', params.status);
     if (params?.upcoming) searchParams.set('upcoming', 'true');
+    if (params?.sportKey) searchParams.set('sportKey', params.sportKey);
+    if (params?.sportKeyPrefix) searchParams.set('sportKeyPrefix', params.sportKeyPrefix);
     if (params?.limit != null) searchParams.set('limit', params.limit.toString());
     if (params?.offset != null) searchParams.set('offset', params.offset.toString());
 

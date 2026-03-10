@@ -52,76 +52,21 @@ describe('AccumulatorService', () => {
     vi.clearAllMocks();
   });
 
-  it('places accumulator with duplicate legs on the same event', async () => {
-    const startsAt = new Date(Date.now() + 60 * 60 * 1000);
-    const queryRawMock = vi.fn().mockResolvedValue([
-      { id: 'event_1', status: 'OPEN', startsAt },
-    ]);
-    const accumulatorCreateMock = vi.fn().mockResolvedValue({
-      id: 'acc_1',
-      userId: 'user_1',
-      stakeAmount: 5,
-      potentialPayout: 31,
-      legs: [],
-    });
-
-    eventFindManyMock.mockResolvedValue([
-      {
-        id: 'event_1',
-        title: 'Match 1',
-        status: 'OPEN',
-        startsAt,
-        outcomes: ['Home', 'Away'],
-        payoutMultiplier: 2,
-        currentOdds: {
-          outcomes: [{ name: 'Home', price: 2.5 }],
-        },
-      },
-    ]);
-
-    transactionMock.mockImplementation(
-      async (callback: (tx: Prisma.TransactionClient) => Promise<unknown>) =>
-        callback({
-          $queryRaw: queryRawMock,
-          accumulator: { create: accumulatorCreateMock },
-        } as unknown as Prisma.TransactionClient)
-    );
-
-    tokenConsumeMock.mockResolvedValue({ transactionId: 'tx_1', newBalance: 20 });
-
-    await AccumulatorService.place({
-      userId: 'user_1',
-      legs: [
-        { eventId: 'event_1', predictedOutcome: 'Home' },
-        { eventId: 'event_1', predictedOutcome: 'Home' },
-      ],
-      stakeAmount: 5,
-    });
-
-    expect(queryRawMock).toHaveBeenCalledTimes(1);
-    expect(accumulatorCreateMock).toHaveBeenCalledWith(
-      expect.objectContaining({
-        data: expect.objectContaining({
-          userId: 'user_1',
-          stakeAmount: 5,
-          legs: {
-            create: expect.arrayContaining([
-              expect.objectContaining({ eventId: 'event_1', predictedOutcome: 'Home' }),
-              expect.objectContaining({ eventId: 'event_1', predictedOutcome: 'Home' }),
-            ]),
-          },
-        }),
+  it('rejects duplicate legs on the same event', async () => {
+    await expect(
+      AccumulatorService.place({
+        userId: 'user_1',
+        legs: [
+          { eventId: 'event_1', predictedOutcome: 'Home' },
+          { eventId: 'event_1', predictedOutcome: 'Away' },
+        ],
+        stakeAmount: 5,
       })
-    );
-    expect(tokenConsumeMock).toHaveBeenCalledWith(
-      'user_1',
-      5,
-      'acc_1',
-      expect.anything(),
-      expect.objectContaining({
-        referenceType: 'ACCUMULATOR',
-      })
-    );
+    ).rejects.toThrow('Accumulator selections must be from different events');
+
+    expect(eventFindManyMock).not.toHaveBeenCalled();
+    expect(transactionMock).not.toHaveBeenCalled();
+    expect(tokenConsumeMock).not.toHaveBeenCalled();
   });
 
   it('settles accumulator as LOST when any leg loses', async () => {

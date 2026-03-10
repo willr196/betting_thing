@@ -11,25 +11,36 @@ export function RewardsPage() {
   const { success: showSuccess, error: showError } = useToast();
   const [rewards, setRewards] = useState<Reward[]>([]);
   const [redemptions, setRedemptions] = useState<Redemption[]>([]);
+  const [pointsBalance, setPointsBalance] = useState(user?.pointsBalance ?? 0);
   const [isLoading, setIsLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'store' | 'history'>('store');
   const [redeemingId, setRedeemingId] = useState<string | null>(null);
   const [loadError, setLoadError] = useState('');
 
   useEffect(() => {
-    loadData();
+    void loadData();
   }, []);
+
+  useEffect(() => {
+    setPointsBalance(user?.pointsBalance ?? 0);
+  }, [user?.pointsBalance]);
 
   const loadData = async () => {
     setIsLoading(true);
     setLoadError('');
     try {
-      const [rewardsData, redemptionsData] = await Promise.all([
+      const [pointsData, rewardsData, redemptionsData] = await Promise.all([
+        api.getPointsBalance(),
         api.getRewards(),
         api.getMyRedemptions(),
       ]);
+      setPointsBalance(pointsData.balance);
       setRewards(rewardsData.rewards);
       setRedemptions(redemptionsData.redemptions);
+
+      if ((user?.pointsBalance ?? 0) !== pointsData.balance) {
+        void refreshUser();
+      }
     } catch (err) {
       setLoadError('Failed to load rewards. Please try again.');
       showError('Failed to load rewards');
@@ -40,7 +51,7 @@ export function RewardsPage() {
   };
 
   const handleRedeem = async (reward: Reward) => {
-    if ((user?.pointsBalance ?? 0) < reward.pointsCost) {
+    if (pointsBalance < reward.pointsCost) {
       showError('Insufficient points balance');
       return;
     }
@@ -78,7 +89,7 @@ export function RewardsPage() {
           <div>
             <p className="text-white/80">Your Balance</p>
             <p className="text-3xl font-bold">
-              {formatPoints(user?.pointsBalance ?? 0)} points
+              {formatPoints(pointsBalance)} points
             </p>
           </div>
           <span className="text-5xl">🏆</span>
@@ -144,7 +155,7 @@ export function RewardsPage() {
               <RewardCard
                 key={reward.id}
                 reward={reward}
-                userBalance={user?.pointsBalance ?? 0}
+                userBalance={pointsBalance}
                 isRedeeming={redeemingId === reward.id}
                 onRedeem={() => handleRedeem(reward)}
               />

@@ -77,6 +77,20 @@ function TestHarness() {
       >
         Add Away
       </button>
+      <button
+        type="button"
+        onClick={() => addSelection('event_1', 'Event 1', 'Away', 1.9)}
+      >
+        Add Event 1 Away
+      </button>
+      <button
+        type="button"
+        onClick={() =>
+          addSelection('event_1', 'Event 1', 'Draw', 3.1, { replaceExistingForEvent: true })
+        }
+      >
+        Replace Event 1
+      </button>
       <button type="button" onClick={toggleAccumulator}>
         Toggle Accumulator
       </button>
@@ -90,6 +104,9 @@ function TestHarness() {
       </button>
 
       <div data-testid="selection-count">{selections.length}</div>
+      <div data-testid="selection-summary">
+        {selections.map((selection) => `${selection.eventId}:${selection.predictedOutcome}`).join('|')}
+      </div>
       <div data-testid="total-cost">{totalCost}</div>
     </div>
   );
@@ -198,6 +215,35 @@ describe('BetSlipContext submit flow', () => {
     expect(screen.getByTestId('selection-count')).toHaveTextContent('2');
   });
 
+  it('skips the accumulator when the slip contains duplicate event selections', async () => {
+    placePredictionMock.mockResolvedValue({});
+
+    render(
+      <BetSlipProvider>
+        <TestHarness />
+      </BetSlipProvider>
+    );
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: 'Add Home' }));
+    await user.click(screen.getByRole('button', { name: 'Add Event 1 Away' }));
+    await user.click(screen.getByRole('button', { name: 'Toggle Accumulator' }));
+
+    expect(screen.getByTestId('total-cost')).toHaveTextContent('10');
+
+    await user.click(screen.getByRole('button', { name: 'Submit Slip' }));
+
+    await waitFor(() => {
+      expect(placePredictionMock).toHaveBeenCalledTimes(2);
+    });
+
+    expect(placeAccumulatorMock).not.toHaveBeenCalled();
+    expect(toastInfoMock).toHaveBeenCalledWith(
+      'Accumulator selections must be from different events. Singles will still be placed.'
+    );
+    expect(toastSuccessMock).toHaveBeenCalledWith('Placed 2 bets successfully');
+  });
+
   it('persists selections when provider remounts', async () => {
     const firstRender = render(
       <BetSlipProvider>
@@ -218,5 +264,24 @@ describe('BetSlipContext submit flow', () => {
     );
 
     expect(screen.getByTestId('selection-count')).toHaveTextContent('2');
+  });
+
+  it('replaces existing selection for the same event when requested', async () => {
+    render(
+      <BetSlipProvider>
+        <TestHarness />
+      </BetSlipProvider>
+    );
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: 'Add Home' }));
+    expect(screen.getByTestId('selection-count')).toHaveTextContent('1');
+    expect(screen.getByTestId('selection-summary')).toHaveTextContent('event_1:Home');
+
+    await user.click(screen.getByRole('button', { name: 'Replace Event 1' }));
+
+    expect(screen.getByTestId('selection-count')).toHaveTextContent('1');
+    expect(screen.getByTestId('selection-summary')).toHaveTextContent('event_1:Draw');
+    expect(screen.getByTestId('selection-summary')).not.toHaveTextContent('event_1:Home');
   });
 });

@@ -116,7 +116,7 @@ export function RegisterPage() {
         {/* Bonus info */}
         <div className="mt-6 p-4 bg-primary-50 rounded-lg text-sm text-primary-700 text-center">
           <span className="text-lg">🎁</span>
-          <p className="font-medium">Get 1,000 free tokens when you sign up!</p>
+          <p className="font-medium">Your signup bonus is added to your wallet as soon as your account is created.</p>
         </div>
       </div>
     </div>

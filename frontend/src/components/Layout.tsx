@@ -95,6 +95,7 @@ export function Layout() {
               {isAuthenticated && (
                 <div className="hidden sm:flex sm:ml-8 sm:space-x-4">
                   <NavItem to="/events">Events</NavItem>
+                  <NavItem to="/football">Football</NavItem>
                   <NavItem to="/predictions">My Predictions</NavItem>
                   <NavItem to="/leagues">
                     Leagues
@@ -171,8 +172,9 @@ export function Layout() {
         {/* Mobile nav */}
         {isAuthenticated && (
           <div className="sm:hidden border-t border-gray-200">
-            <div className="flex justify-around py-2">
+            <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-2 px-3 py-2">
               <MobileNavItem to="/events">Events</MobileNavItem>
+              <MobileNavItem to="/football">Football</MobileNavItem>
               <MobileNavItem to="/predictions">Predictions</MobileNavItem>
               <MobileNavItem to="/leagues">Leagues</MobileNavItem>
               <MobileNavItem to="/leaderboard">Leaders</MobileNavItem>

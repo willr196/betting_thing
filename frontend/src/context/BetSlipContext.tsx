@@ -27,12 +27,20 @@ export interface BetSlipSelection {
 interface BetSlipContextType {
   selections: BetSlipSelection[];
   accumulatorEnabled: boolean;
+  canPlaceAccumulator: boolean;
+  hasDuplicateEventSelections: boolean;
   singleStake: number;
   accumulatorStake: number;
   combinedOdds: number;
   totalCost: number;
   isSubmitting: boolean;
-  addSelection: (eventId: string, eventTitle: string, predictedOutcome: string, odds: number) => void;
+  addSelection: (
+    eventId: string,
+    eventTitle: string,
+    predictedOutcome: string,
+    odds: number,
+    options?: { replaceExistingForEvent?: boolean }
+  ) => void;
   removeSelection: (id: string) => void;
   clearSlip: () => void;
   toggleSingle: (id: string) => void;
@@ -96,29 +104,46 @@ export function BetSlipProvider({ children }: { children: ReactNode }) {
     return selections.reduce((product, selection) => product * selection.odds, 1);
   }, [selections]);
 
+  const hasDuplicateEventSelections = useMemo(
+    () => selectionHasDuplicateEvents(selections),
+    [selections]
+  );
+
+  const canPlaceAccumulator = useMemo(
+    () => selections.length >= 2 && !hasDuplicateEventSelections,
+    [hasDuplicateEventSelections, selections.length]
+  );
+
   const totalCost = useMemo(() => {
     const singlesCost = selections.filter((selection) => selection.placeSingle).length * singleStake;
-    const accumulatorCost = accumulatorEnabled && selections.length >= 2 ? accumulatorStake : 0;
+    const accumulatorCost = accumulatorEnabled && canPlaceAccumulator ? accumulatorStake : 0;
     return singlesCost + accumulatorCost;
-  }, [accumulatorEnabled, accumulatorStake, selections, singleStake]);
+  }, [accumulatorEnabled, accumulatorStake, canPlaceAccumulator, selections, singleStake]);
 
   const addSelection = (
     eventId: string,
     eventTitle: string,
     predictedOutcome: string,
-    odds: number
+    odds: number,
+    options?: { replaceExistingForEvent?: boolean }
   ) => {
-    setSelections((previous) => [
-      ...previous,
-      {
-        id: createSelectionId(),
-        eventId,
-        eventTitle,
-        predictedOutcome,
-        odds,
-        placeSingle: true,
-      },
-    ]);
+    setSelections((previous) => {
+      const base = options?.replaceExistingForEvent
+        ? previous.filter((selection) => selection.eventId !== eventId)
+        : previous;
+
+      return [
+        ...base,
+        {
+          id: createSelectionId(),
+          eventId,
+          eventTitle,
+          predictedOutcome,
+          odds,
+          placeSingle: true,
+        },
+      ];
+    });
   };
 
   const removeSelection = (id: string) => {
@@ -168,10 +193,16 @@ export function BetSlipProvider({ children }: { children: ReactNode }) {
     }
 
     const singles = selections.filter((selection) => selection.placeSingle);
-    const shouldPlaceAccumulator = accumulatorEnabled && selections.length >= 2;
+    const accumulatorUnavailableMessage =
+      selections.length < 2
+        ? 'Accumulator requires at least two selections'
+        : hasDuplicateEventSelections
+          ? 'Accumulator selections must be from different events'
+          : null;
+    const shouldPlaceAccumulator = accumulatorEnabled && canPlaceAccumulator;
 
     if (singles.length === 0 && !shouldPlaceAccumulator) {
-      showError('Select at least one single or enable accumulator');
+      showError(accumulatorUnavailableMessage ?? 'Select at least one single or enable accumulator');
       return;
     }
 
@@ -206,6 +237,10 @@ export function BetSlipProvider({ children }: { children: ReactNode }) {
     setIsSubmitting(true);
 
     try {
+      if (accumulatorEnabled && accumulatorUnavailableMessage && singles.length > 0) {
+        showInfo(`${accumulatorUnavailableMessage}. Singles will still be placed.`);
+      }
+
       const results = await Promise.allSettled(requests.map((request) => request.run()));
 
       const succeeded: string[] = [];
@@ -250,6 +285,8 @@ export function BetSlipProvider({ children }: { children: ReactNode }) {
   const value: BetSlipContextType = {
     selections,
     accumulatorEnabled,
+    canPlaceAccumulator,
+    hasDuplicateEventSelections,
     singleStake,
     accumulatorStake,
     combinedOdds,
@@ -282,6 +319,20 @@ function clampStake(value: number): number {
   }
 
   return Math.min(MAX_STAKE, Math.max(MIN_STAKE, Math.floor(value)));
+}
+
+function selectionHasDuplicateEvents(selections: BetSlipSelection[]): boolean {
+  const seen = new Set<string>();
+
+  for (const selection of selections) {
+    if (seen.has(selection.eventId)) {
+      return true;
+    }
+
+    seen.add(selection.eventId);
+  }
+
+  return false;
 }
 
 function createSelectionId(): string {

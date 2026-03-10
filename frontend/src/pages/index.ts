@@ -2,6 +2,7 @@ export { LoginPage } from './LoginPage';
 export { RegisterPage } from './RegisterPage';
 export { EventsPage } from './EventsPage';
 export { EventDetailPage } from './EventDetailPage';
+export { FootballPage } from './FootballPage';
 export { PredictionsPage } from './PredictionsPage';
 export { LeaderboardPage } from './LeaderboardPage';
 export { RewardsPage } from './RewardsPage';

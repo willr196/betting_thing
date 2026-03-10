@@ -9,6 +9,8 @@ export function BetSlip() {
   const {
     selections,
     accumulatorEnabled,
+    canPlaceAccumulator,
+    hasDuplicateEventSelections,
     singleStake,
     accumulatorStake,
     combinedOdds,
@@ -42,8 +44,8 @@ export function BetSlip() {
 
   const balance = user.tokenBalance;
   const hasSinglesSelected = singlesCount > 0;
-  const canUseAccumulator = selections.length >= 2;
-  const accumulatorActive = accumulatorEnabled && canUseAccumulator;
+  const canToggleAccumulator = selections.length >= 2;
+  const accumulatorActive = accumulatorEnabled && canPlaceAccumulator;
   const accumulatorPotentialPayout = Math.floor(accumulatorStake * combinedOdds);
   const canSubmit = totalCost > 0 && totalCost <= balance && !isSubmitting;
 
@@ -149,9 +151,9 @@ export function BetSlip() {
                   <label className="inline-flex items-center gap-2 text-sm font-medium text-gray-800">
                     <input
                       type="checkbox"
-                      checked={accumulatorActive}
+                      checked={accumulatorEnabled}
                       onChange={toggleAccumulator}
-                      disabled={!canUseAccumulator}
+                      disabled={!canToggleAccumulator}
                     />
                     Place as accumulator
                   </label>
@@ -159,6 +161,12 @@ export function BetSlip() {
                   <p className="mt-2 text-sm text-gray-600">
                     Combined odds: {combinedOdds.toFixed(2)}x
                   </p>
+
+                  {hasDuplicateEventSelections && (
+                    <p className="mt-2 text-sm text-amber-700">
+                      Accumulators need one selection per event. Remove duplicate event picks or keep them as singles.
+                    </p>
+                  )}
 
                   {accumulatorActive && (
                     <>
@@ -203,6 +211,12 @@ export function BetSlip() {
 
                 {!canSubmit && totalCost > balance && (
                   <p className="mb-3 text-sm text-red-600">Insufficient tokens for this slip</p>
+                )}
+
+                {accumulatorEnabled && !canPlaceAccumulator && hasDuplicateEventSelections && (
+                  <p className="mb-3 text-sm text-amber-700">
+                    Accumulator stake is excluded until every selection is on a different event.
+                  </p>
                 )}
 
                 <Button

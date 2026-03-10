@@ -14,6 +14,8 @@ const router = Router();
 const listEventsSchema = z.object({
   status: z.enum(['OPEN', 'LOCKED', 'SETTLED', 'CANCELLED']).optional(),
   upcoming: z.coerce.boolean().optional(),
+  sportKey: z.string().min(1).optional(),
+  sportKeyPrefix: z.string().min(1).optional(),
   limit: z.coerce.number().int().min(1).max(100).default(20),
   offset: z.coerce.number().int().min(0).default(0),
 });
@@ -31,11 +33,20 @@ router.get(
   optionalAuth,
   validateQuery(listEventsSchema),
   asyncHandler(async (req, res) => {
-    const { status, upcoming, limit, offset } = req.query as unknown as z.infer<typeof listEventsSchema>;
+    const {
+      status,
+      upcoming,
+      sportKey,
+      sportKeyPrefix,
+      limit,
+      offset,
+    } = req.query as unknown as z.infer<typeof listEventsSchema>;
 
     const result = await EventService.list({
       status,
       upcoming,
+      sportKey,
+      sportKeyPrefix,
       limit,
       offset,
     });

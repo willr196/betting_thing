@@ -10,6 +10,7 @@ import {
   RegisterPage,
   EventsPage,
   EventDetailPage,
+  FootballPage,
   PredictionsPage,
   LeaderboardPage,
   RewardsPage,
@@ -112,6 +113,7 @@ function AppRoutes() {
         <Route index element={<Navigate to="/events" replace />} />
         <Route path="events" element={<ErrorBoundary><EventsPage /></ErrorBoundary>} />
         <Route path="events/:id" element={<ErrorBoundary><EventDetailPage /></ErrorBoundary>} />
+        <Route path="football" element={<ErrorBoundary><FootballPage /></ErrorBoundary>} />
         <Route path="predictions" element={<ErrorBoundary><PredictionsPage /></ErrorBoundary>} />
         <Route path="leaderboard" element={<ErrorBoundary><LeaderboardPage /></ErrorBoundary>} />
         <Route path="leagues" element={<ErrorBoundary><LeaguesPage /></ErrorBoundary>} />

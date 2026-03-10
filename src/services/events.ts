@@ -81,8 +81,17 @@ export const EventService = {
     limit?: number;
     offset?: number;
     upcoming?: boolean;
+    sportKey?: string;
+    sportKeyPrefix?: string;
   } = {}) {
-    const { status, limit = 20, offset = 0, upcoming } = options;
+    const {
+      status,
+      limit = 20,
+      offset = 0,
+      upcoming,
+      sportKey,
+      sportKeyPrefix,
+    } = options;
 
     const where: Prisma.EventWhereInput = {};
     
@@ -93,6 +102,12 @@ export const EventService = {
     if (upcoming) {
       where.startsAt = { gt: new Date() };
       where.status = 'OPEN';
+    }
+
+    if (sportKey) {
+      where.externalSportKey = sportKey;
+    } else if (sportKeyPrefix) {
+      where.externalSportKey = { startsWith: sportKeyPrefix };
     }
 
     const [events, total] = await Promise.all([
