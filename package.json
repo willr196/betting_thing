@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "build": "tsc",
-    "start": "node dist/index.js",
+    "start": "prisma migrate deploy && node dist/index.js",
     "docker:prod:up": "docker compose --env-file .env.production -f docker-compose.prod.yml up -d --build",
     "docker:prod:down": "docker compose --env-file .env.production -f docker-compose.prod.yml down",
     "db:generate": "prisma generate",
