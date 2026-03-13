@@ -20,13 +20,19 @@ const router = Router();
 // =============================================================================
 
 const REFRESH_COOKIE = 'refresh_token';
-
-const refreshCookieOptions = {
+const refreshCookieSameSite: 'none' | 'strict' = config.isProd ? 'none' : 'strict';
+const refreshCookieBaseOptions = {
   httpOnly: true,
   secure: config.isProd,
-  sameSite: 'strict' as const,
-  maxAge: config.auth.refreshTokenExpiresDays * 24 * 60 * 60 * 1000,
+  // Production uses a separate frontend origin, so the browser must be allowed
+  // to attach the refresh cookie on cross-site credentialed requests.
+  sameSite: refreshCookieSameSite,
   path: '/api/v1/auth',
+};
+
+const refreshCookieOptions = {
+  ...refreshCookieBaseOptions,
+  maxAge: config.auth.refreshTokenExpiresDays * 24 * 60 * 60 * 1000,
 };
 
 function setRefreshCookie(res: Response, token: string) {
@@ -34,7 +40,7 @@ function setRefreshCookie(res: Response, token: string) {
 }
 
 function clearRefreshCookie(res: Response) {
-  res.clearCookie(REFRESH_COOKIE, { path: '/api/v1/auth' });
+  res.clearCookie(REFRESH_COOKIE, refreshCookieBaseOptions);
 }
 
 // =============================================================================

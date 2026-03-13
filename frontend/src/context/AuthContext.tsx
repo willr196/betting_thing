@@ -39,11 +39,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // Restore session on mount:
   // 1. If a stored access token exists, validate it via /auth/me.
-  // 2. If no token (or token is invalid/expired), try the refresh token cookie.
-  // 3. If both fail, user is unauthenticated.
+  // 2. If that fails, or we have a prior-session hint, try the refresh token cookie.
+  // 3. Otherwise treat the user as unauthenticated.
   useEffect(() => {
     async function restoreSession() {
       const token = api.getToken();
+      const hasSessionHint = api.hasSessionHint();
+      let shouldAttemptRefresh = hasSessionHint;
 
       if (token) {
         try {
@@ -56,12 +58,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           // If it gets here, both the access token and refresh failed.
           if (error instanceof ApiError && error.status === 401) {
             api.setToken(null);
+            shouldAttemptRefresh = true;
             // Fall through to try the refresh cookie directly
           } else {
             setIsLoading(false);
             return;
           }
         }
+      }
+
+      if (!shouldAttemptRefresh) {
+        setUser(null);
+        setIsLoading(false);
+        return;
       }
 
       // No valid access token — attempt silent refresh via cookie

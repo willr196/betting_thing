@@ -32,6 +32,7 @@ import type {
 // Default to a same-origin API path so Vite's dev proxy can be used.
 // Allow overrides (e.g. docker/ngrok) via VITE_API_URL like "http://localhost:3000/api".
 const API_BASE = (import.meta.env.VITE_API_URL ?? '/api/v1').replace(/\/+$/, '');
+const SESSION_HINT_KEY = 'auth_session_hint';
 
 type StorageLike = {
   getItem(key: string): string | null;
@@ -47,7 +48,7 @@ function getDefaultStorage(): StorageLike | null {
   return window.localStorage ?? null;
 }
 
-class ApiClient {
+export class ApiClient {
   private token: string | null = null;
   private storage: StorageLike | null;
   private isRefreshing = false;
@@ -74,6 +75,18 @@ class ApiClient {
       this.token = this.storage.getItem('token');
     }
     return this.token;
+  }
+
+  hasSessionHint(): boolean {
+    return this.storage?.getItem(SESSION_HINT_KEY) === '1';
+  }
+
+  private markSessionHint() {
+    this.storage?.setItem(SESSION_HINT_KEY, '1');
+  }
+
+  private clearSessionHint() {
+    this.storage?.removeItem(SESSION_HINT_KEY);
   }
 
   private async request<T>(
@@ -170,6 +183,7 @@ class ApiClient {
       method: 'POST',
       body: JSON.stringify({ email, password }),
     });
+    this.markSessionHint();
     this.setToken(data.token);
     return data;
   }
@@ -179,6 +193,7 @@ class ApiClient {
       method: 'POST',
       body: JSON.stringify({ email, password }),
     });
+    this.markSessionHint();
     this.setToken(data.token);
     return data;
   }
@@ -195,8 +210,12 @@ class ApiClient {
         { method: 'POST' },
         false // Don't retry on failure
       );
+      this.markSessionHint();
       this.setToken(data.token);
       return data;
+    } catch (error) {
+      this.clearSessionHint();
+      throw error;
     } finally {
       this.isRefreshing = false;
     }
@@ -208,6 +227,7 @@ class ApiClient {
     } catch {
       // Ignore errors during logout
     } finally {
+      this.clearSessionHint();
       this.setToken(null);
     }
   }
