@@ -298,14 +298,12 @@ router.get(
       ]);
 
     let streak = { current: 0, longest: 0 };
-    try {
-      const rank = await LeaderboardService.getUserRank(userId, 'ALL_TIME', 'all-time');
+    const rank = await LeaderboardService.findUserRank(userId, 'ALL_TIME', 'all-time');
+    if (rank) {
       streak = {
         current: rank.currentStreak,
         longest: rank.longestStreak,
       };
-    } catch {
-      // No leaderboard record yet — keep zeroed streak.
     }
 
     const recentActivity = [

@@ -35,6 +35,21 @@ function toNumber(value: number | bigint): number {
   return typeof value === 'bigint' ? Number(value) : value;
 }
 
+function toLeaderboardEntry(row: RankedLeaderboardRow) {
+  return {
+    rank: toNumber(row.rank),
+    userId: row.userId,
+    displayName: anonymizeEmail(row.email),
+    totalPredictions: row.totalPredictions,
+    wins: row.wins,
+    losses: row.losses,
+    totalPointsWon: row.totalPointsWon,
+    winRate: row.winRate,
+    currentStreak: row.currentStreak,
+    longestStreak: row.longestStreak,
+  };
+}
+
 function anonymizeEmail(email: string): string {
   const localPart = email.split('@')[0] ?? email;
   const prefix = localPart.slice(0, 3);
@@ -153,6 +168,52 @@ async function updateLeaderboardPeriod(
   return { currentStreak };
 }
 
+async function findUserRank(
+  userId: string,
+  period: LeaderboardPeriod,
+  periodKey = periodKeyFor(period)
+) {
+  const [row] = await prisma.$queryRaw<Array<RankedLeaderboardRow>>`
+    WITH ranked AS (
+      SELECT
+        lb."userId",
+        u."email",
+        lb."totalPredictions",
+        lb."wins",
+        lb."losses",
+        lb."totalPointsWon",
+        lb."winRate",
+        lb."currentStreak",
+        lb."longestStreak",
+        ROW_NUMBER() OVER (
+          ORDER BY
+            lb."totalPointsWon" DESC,
+            lb."wins" DESC,
+            lb."winRate" DESC,
+            lb."userId" ASC
+        ) AS "rank"
+      FROM "Leaderboard" lb
+      INNER JOIN "User" u ON u."id" = lb."userId"
+      WHERE lb."period" = ${period}::"LeaderboardPeriod"
+        AND lb."periodKey" = ${periodKey}
+    )
+    SELECT *
+    FROM ranked
+    WHERE "userId" = ${userId}
+    LIMIT 1
+  `;
+
+  if (!row) {
+    return null;
+  }
+
+  return {
+    ...toLeaderboardEntry(row),
+    period,
+    periodKey,
+  };
+}
+
 export const LeaderboardService = {
   async updateAfterSettlement(
     userId: string,
@@ -235,21 +296,10 @@ export const LeaderboardService = {
       LIMIT ${limit}
     `;
 
-    const leaderboard = rows.map((row) => ({
-      rank: toNumber(row.rank),
-      userId: row.userId,
-      displayName: anonymizeEmail(row.email),
-      totalPredictions: row.totalPredictions,
-      wins: row.wins,
-      losses: row.losses,
-      totalPointsWon: row.totalPointsWon,
-      winRate: row.winRate,
-      currentStreak: row.currentStreak,
-      longestStreak: row.longestStreak,
-    }));
+    const leaderboard = rows.map(toLeaderboardEntry);
 
     const userRank = currentUserId
-      ? await this.getUserRank(currentUserId, period, periodKey)
+      ? await findUserRank(currentUserId, period, periodKey)
       : null;
 
     return {
@@ -260,59 +310,24 @@ export const LeaderboardService = {
     };
   },
 
+  async findUserRank(
+    userId: string,
+    period: LeaderboardPeriod,
+    periodKey = periodKeyFor(period)
+  ) {
+    return findUserRank(userId, period, periodKey);
+  },
+
   async getUserRank(
     userId: string,
     period: LeaderboardPeriod,
     periodKey = periodKeyFor(period)
   ) {
-    const [row] = await prisma.$queryRaw<Array<RankedLeaderboardRow>>`
-      WITH ranked AS (
-        SELECT
-          lb."userId",
-          u."email",
-          lb."totalPredictions",
-          lb."wins",
-          lb."losses",
-          lb."totalPointsWon",
-          lb."winRate",
-          lb."currentStreak",
-          lb."longestStreak",
-          ROW_NUMBER() OVER (
-            ORDER BY
-              lb."totalPointsWon" DESC,
-              lb."wins" DESC,
-              lb."winRate" DESC,
-              lb."userId" ASC
-          ) AS "rank"
-        FROM "Leaderboard" lb
-        INNER JOIN "User" u ON u."id" = lb."userId"
-        WHERE lb."period" = ${period}::"LeaderboardPeriod"
-          AND lb."periodKey" = ${periodKey}
-      )
-      SELECT *
-      FROM ranked
-      WHERE "userId" = ${userId}
-      LIMIT 1
-    `;
-
-    if (!row) {
+    const rank = await findUserRank(userId, period, periodKey);
+    if (!rank) {
       throw AppError.notFound('Leaderboard entry');
     }
-
-    return {
-      rank: toNumber(row.rank),
-      userId: row.userId,
-      displayName: anonymizeEmail(row.email),
-      totalPredictions: row.totalPredictions,
-      wins: row.wins,
-      losses: row.losses,
-      totalPointsWon: row.totalPointsWon,
-      winRate: row.winRate,
-      currentStreak: row.currentStreak,
-      longestStreak: row.longestStreak,
-      period,
-      periodKey,
-    };
+    return rank;
   },
 
   getCurrentPeriodKey(period: LeaderboardPeriod) {

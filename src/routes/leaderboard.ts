@@ -69,7 +69,7 @@ router.get(
     };
     const period = parsePeriod(rawPeriod);
 
-    const rank = await LeaderboardService.getUserRank(
+    const rank = await LeaderboardService.findUserRank(
       userId,
       period,
       periodKey ?? LeaderboardService.getCurrentPeriodKey(period)

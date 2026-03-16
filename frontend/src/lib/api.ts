@@ -422,7 +422,7 @@ export class ApiClient {
 
   async getMyLeaderboardRank(
     period: LeaderboardPeriod
-  ): Promise<{ rank: LeaderboardEntry }> {
+  ): Promise<{ rank: LeaderboardEntry | null }> {
     const searchParams = new URLSearchParams({ period });
     return this.request(`/leaderboard/me?${searchParams.toString()}`);
   }
