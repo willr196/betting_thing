@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
-import { useToast } from '../context/ToastContext';
 import { formatPoints } from '../lib/utils';
 import { Card, Badge, Spinner, Button, EmptyState } from '../components/ui';
 import type { LeaderboardEntry, LeaderboardPeriod } from '../types';
@@ -22,7 +21,6 @@ const PERIODS: Array<{ key: LeaderboardPeriod; label: string }> = [
 
 export function LeaderboardPage() {
   const { user, isAuthenticated } = useAuth();
-  const { error: showError } = useToast();
   const [selectedPeriod, setSelectedPeriod] = useState<LeaderboardPeriod>('weekly');
   const [isLoading, setIsLoading] = useState(true);
   const [data, setData] = useState<LeaderboardResponse | null>(null);
@@ -43,8 +41,8 @@ export function LeaderboardPage() {
       const response = await api.getLeaderboard(period, 20);
       setData(response);
     } catch {
-      setLoadError('Failed to load leaderboard.');
-      showError('Failed to load leaderboard.');
+      // Silently set error state — no global toast for background data failures
+      setLoadError('Rankings could not be loaded right now.');
     } finally {
       setIsLoading(false);
     }
@@ -52,11 +50,12 @@ export function LeaderboardPage() {
 
   return (
     <div className="space-y-6">
+      {/* Hero */}
       <Card className="overflow-hidden bg-gradient-to-r from-slate-900 via-primary-700 to-emerald-600 text-white">
         <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
           <div className="max-w-2xl">
             <Badge className="bg-white/15 text-white">Community leaderboard</Badge>
-            <h1 className="mt-4 text-3xl font-bold">See who is leading the board</h1>
+            <h1 className="mt-4 text-3xl font-bold">See who's leading the board</h1>
             <p className="mt-2 text-sm text-white/80">
               Weekly, monthly, and all-time rankings based on settled predictions and points won.
             </p>
@@ -65,7 +64,7 @@ export function LeaderboardPage() {
           <div className="flex flex-wrap gap-3">
             {isAuthenticated ? (
               <Link to="/events">
-                <Button variant="secondary">Make predictions</Button>
+                <Button variant="secondary">Make a prediction</Button>
               </Link>
             ) : (
               <>
@@ -86,16 +85,17 @@ export function LeaderboardPage() {
         </div>
       </Card>
 
+      {/* Period tabs */}
       <div className="flex flex-wrap gap-2">
         {PERIODS.map((period) => (
           <button
             key={period.key}
             type="button"
             onClick={() => setSelectedPeriod(period.key)}
-            className={`rounded-lg px-4 py-2 text-sm font-medium transition-colors ${
+            className={`rounded-full px-4 py-2 text-sm font-medium transition-colors ${
               selectedPeriod === period.key
                 ? 'bg-primary-600 text-white'
-                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                : 'border border-gray-200 bg-white/80 text-gray-600 hover:bg-gray-50'
             }`}
           >
             {period.label}
@@ -103,6 +103,7 @@ export function LeaderboardPage() {
         ))}
       </div>
 
+      {/* Podium + user rank (only when data loads) */}
       {data && (
         <div className="grid gap-4 lg:grid-cols-[minmax(0,3fr)_minmax(280px,1fr)]">
           <div className="grid gap-4 md:grid-cols-3">
@@ -127,10 +128,10 @@ export function LeaderboardPage() {
                     {formatPoints(entry.totalPointsWon)}
                   </p>
                   <p className="mt-1 text-sm text-gray-600">
-                    {entry.wins}W • {entry.losses}L • {entry.totalPredictions} settled picks
+                    {entry.wins}W · {entry.losses}L · {entry.totalPredictions} picks
                   </p>
                   <p className="mt-3 text-sm text-gray-500">
-                    Current streak {entry.currentStreak} • Best {entry.longestStreak}
+                    Streak {entry.currentStreak} · Best {entry.longestStreak}
                   </p>
                 </Card>
               );
@@ -140,8 +141,8 @@ export function LeaderboardPage() {
           <Card>
             <p className="text-sm font-medium text-gray-500">Current period</p>
             <p className="mt-1 text-2xl font-semibold text-gray-900">{data.periodKey}</p>
-            <p className="mt-2 text-sm text-gray-600">
-              Rankings are ordered by points won, then wins, then win rate.
+            <p className="mt-2 text-sm text-gray-500">
+              Ranked by points won, then wins, then win rate.
             </p>
 
             <div className="mt-5 space-y-3">
@@ -155,14 +156,14 @@ export function LeaderboardPage() {
                 </div>
               ) : isAuthenticated ? (
                 <div className="rounded-xl bg-gray-50 px-4 py-3">
-                  <p className="text-sm font-medium text-gray-800">No rank yet</p>
-                  <p className="mt-1 text-sm text-gray-600">
-                    Settle a prediction to appear on this board.
+                  <p className="text-sm font-semibold text-gray-700">Not yet ranked</p>
+                  <p className="mt-1 text-sm text-gray-500">
+                    Settle a prediction to appear on the board.
                   </p>
                 </div>
               ) : (
                 <div className="rounded-xl bg-emerald-50 px-4 py-3">
-                  <p className="text-sm font-medium text-emerald-800">Join to compete</p>
+                  <p className="text-sm font-semibold text-emerald-800">Join to compete</p>
                   <p className="mt-1 text-sm text-emerald-700">
                     Create an account to track your rank and climb the board.
                   </p>
@@ -173,6 +174,7 @@ export function LeaderboardPage() {
         </div>
       )}
 
+      {/* Rankings table */}
       <Card>
         {isLoading ? (
           <div className="flex justify-center py-10">
@@ -180,33 +182,44 @@ export function LeaderboardPage() {
           </div>
         ) : loadError ? (
           <div className="py-10 text-center">
-            <p className="mb-4 text-red-600">{loadError}</p>
-            <Button onClick={() => loadLeaderboard(selectedPeriod)}>Retry</Button>
+            <p className="text-sm text-gray-500">Rankings aren't available right now.</p>
+            <p className="mt-1 text-xs text-gray-400">This is usually temporary — try refreshing in a moment.</p>
+            <Button
+              variant="secondary"
+              className="mt-5"
+              onClick={() => void loadLeaderboard(selectedPeriod)}
+            >
+              Try again
+            </Button>
           </div>
         ) : !data || data.leaderboard.length === 0 ? (
           <EmptyState
-            title="No leaderboard entries yet"
-            description="Entries will appear after settled predictions."
+            title="No rankings yet"
+            description="Rankings appear once predictions have been settled. Make some picks to get on the board."
             action={
-              !isAuthenticated ? (
+              isAuthenticated ? (
+                <Link to="/events">
+                  <Button>Browse events</Button>
+                </Link>
+              ) : (
                 <Link to={`/register?redirect=${authRedirect}`}>
                   <Button>Create account</Button>
                 </Link>
-              ) : undefined
+              )
             }
           />
         ) : (
           <div className="overflow-x-auto">
             <table className="min-w-full text-sm">
               <thead>
-                <tr className="border-b border-gray-200 text-left text-gray-500">
-                  <th className="py-2 pr-4">Rank</th>
-                  <th className="py-2 pr-4">User</th>
-                  <th className="py-2 pr-4">Record</th>
-                  <th className="py-2 pr-4">Predictions</th>
-                  <th className="py-2 pr-4">Win Rate</th>
-                  <th className="py-2 pr-4">Points Won</th>
-                  <th className="py-2 pr-4">Streak</th>
+                <tr className="border-b border-gray-200 text-left text-xs font-semibold uppercase tracking-wide text-gray-400">
+                  <th className="py-3 pr-4">Rank</th>
+                  <th className="py-3 pr-4">Player</th>
+                  <th className="py-3 pr-4">Record</th>
+                  <th className="py-3 pr-4">Picks</th>
+                  <th className="py-3 pr-4">Win rate</th>
+                  <th className="py-3 pr-4">Points won</th>
+                  <th className="py-3 pr-4">Streak</th>
                 </tr>
               </thead>
               <tbody>
@@ -215,24 +228,32 @@ export function LeaderboardPage() {
                   return (
                     <tr
                       key={entry.userId}
-                      className={`border-b border-gray-100 ${
-                        isCurrentUser ? 'bg-primary-50' : ''
+                      className={`border-b border-gray-100 transition-colors ${
+                        isCurrentUser ? 'bg-primary-50' : 'hover:bg-gray-50/60'
                       }`}
                     >
                       <td className="py-3 pr-4 font-semibold text-gray-900">#{entry.rank}</td>
-                      <td className="py-3 pr-4 text-gray-800">{entry.displayName}</td>
-                      <td className="py-3 pr-4 text-gray-700">
-                        {entry.wins}W - {entry.losses}L
+                      <td className="py-3 pr-4 font-medium text-gray-800">
+                        {entry.displayName}
+                        {isCurrentUser && (
+                          <span className="ml-1.5 text-xs font-normal text-primary-600">(you)</span>
+                        )}
                       </td>
-                      <td className="py-3 pr-4 text-gray-700">{entry.totalPredictions}</td>
-                      <td className="py-3 pr-4 text-gray-700">
+                      <td className="py-3 pr-4 text-gray-600">
+                        {entry.wins}W · {entry.losses}L
+                      </td>
+                      <td className="py-3 pr-4 text-gray-600">{entry.totalPredictions}</td>
+                      <td className="py-3 pr-4 text-gray-600">
                         {(entry.winRate * 100).toFixed(1)}%
                       </td>
-                      <td className="py-3 pr-4 text-gray-700">
+                      <td className="py-3 pr-4 font-medium text-gray-800">
                         {formatPoints(entry.totalPointsWon)}
                       </td>
-                      <td className="py-3 pr-4 text-gray-700">
-                        🔥 {entry.currentStreak} (best {entry.longestStreak})
+                      <td className="py-3 pr-4 text-gray-600">
+                        🔥 {entry.currentStreak}
+                        <span className="ml-1 text-xs text-gray-400">
+                          (best {entry.longestStreak})
+                        </span>
                       </td>
                     </tr>
                   );

@@ -4,11 +4,18 @@ import { api } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import { formatDate, formatPoints, formatTokens, getStatusColor } from '../lib/utils';
-import { Badge, Button, Card, EmptyState, Spinner, StatCard } from '../components/ui';
+import { Badge, Button, Card, EmptyState, FilterChip, InlineError, Spinner, StatCard } from '../components/ui';
 import type { Accumulator, AccumulatorLeg, Prediction, PredictionStats } from '../types';
 
+const POLL_INTERVAL_MS = 60_000;
+
+function formatFilterLabel(value: string): string {
+  if (value === 'all') return 'All';
+  if (value === 'CASHED_OUT') return 'Cashed Out';
+  return value.charAt(0).toUpperCase() + value.slice(1).toLowerCase();
+}
+
 export function PredictionsPage() {
-  const POLL_INTERVAL_MS = 60_000;
   const { refreshUser } = useAuth();
   const { success: showSuccess, error: showError } = useToast();
 
@@ -19,8 +26,6 @@ export function PredictionsPage() {
   const [singlesLoading, setSinglesLoading] = useState(true);
   const [singlesError, setSinglesError] = useState('');
   const [filter, setFilter] = useState<'all' | 'PENDING' | 'WON' | 'LOST' | 'CASHED_OUT'>('all');
-  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
-  const [secondsAgo, setSecondsAgo] = useState(0);
 
   const [accumulators, setAccumulators] = useState<Accumulator[]>([]);
   const [accumulatorsLoading, setAccumulatorsLoading] = useState(false);
@@ -29,28 +34,16 @@ export function PredictionsPage() {
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const hasPendingSingles = predictions.some((prediction) => prediction.status === 'PENDING');
+  const settledCount = (stats?.won ?? 0) + (stats?.lost ?? 0);
 
-  useEffect(() => {
-    if (!lastUpdated || !hasPendingSingles) {
-      return;
-    }
-
-    const tick = setInterval(() => {
-      setSecondsAgo(Math.floor((Date.now() - lastUpdated.getTime()) / 1000));
-    }, 1000);
-
-    return () => clearInterval(tick);
-  }, [hasPendingSingles, lastUpdated]);
-
+  // Silent background polling for pending singles
   useEffect(() => {
     if (intervalRef.current) {
       clearInterval(intervalRef.current);
       intervalRef.current = null;
     }
 
-    if (!hasPendingSingles) {
-      return;
-    }
+    if (!hasPendingSingles) return;
 
     intervalRef.current = setInterval(() => {
       void loadSingles(true);
@@ -68,22 +61,16 @@ export function PredictionsPage() {
       void loadSingles();
       return;
     }
-
     void loadAccumulators();
   }, [activeTab, filter]);
 
   const loadSingles = async (silent = false) => {
-    if (!silent) {
-      setSinglesLoading(true);
-    }
-
+    if (!silent) setSinglesLoading(true);
     setSinglesError('');
 
     try {
       const params: { status?: string; limit: number } = { limit: 50 };
-      if (filter !== 'all') {
-        params.status = filter;
-      }
+      if (filter !== 'all') params.status = filter;
 
       const [predictionsData, statsData] = await Promise.all([
         api.getMyPredictions(params),
@@ -92,18 +79,13 @@ export function PredictionsPage() {
 
       setPredictions(predictionsData.predictions);
       setStats(statsData.stats);
-      setLastUpdated(new Date());
-      setSecondsAgo(0);
-    } catch (error) {
+    } catch {
       if (!silent) {
-        setSinglesError('Failed to load predictions. Please try again.');
-        showError('Failed to load predictions');
+        setSinglesError('Your picks could not be loaded right now.');
+        showError('Unable to load predictions');
       }
-      console.error('Failed to load predictions', error);
     } finally {
-      if (!silent) {
-        setSinglesLoading(false);
-      }
+      if (!silent) setSinglesLoading(false);
     }
   };
 
@@ -114,10 +96,9 @@ export function PredictionsPage() {
     try {
       const data = await api.getMyAccumulators({ limit: 50 });
       setAccumulators(data.accumulators);
-    } catch (error) {
-      setAccumulatorsError('Failed to load accumulators. Please try again.');
-      showError('Failed to load accumulators');
-      console.error('Failed to load accumulators', error);
+    } catch {
+      setAccumulatorsError('Your accumulators could not be loaded right now.');
+      showError('Unable to load accumulators');
     } finally {
       setAccumulatorsLoading(false);
     }
@@ -133,77 +114,62 @@ export function PredictionsPage() {
 
   return (
     <div>
-      <div className="mb-6 flex items-start justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">My Bets</h1>
-          <p className="mt-1 text-gray-600">Track your singles and accumulators</p>
-        </div>
-        {activeTab === 'singles' && hasPendingSingles && lastUpdated && (
-          <p className="mt-1 shrink-0 text-xs text-gray-400">Updated {secondsAgo}s ago</p>
-        )}
+      <div className="mb-6">
+        <h1 className="text-2xl font-bold text-gray-900">My Picks</h1>
+        <p className="mt-1 text-sm text-gray-500">Track your singles and accumulators</p>
       </div>
 
+      {/* Tab switcher */}
       <div className="mb-6 flex gap-2">
-        <button
-          type="button"
-          onClick={() => setActiveTab('singles')}
-          className={`rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
-            activeTab === 'singles'
-              ? 'bg-primary-600 text-white'
-              : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-          }`}
-        >
+        <FilterChip active={activeTab === 'singles'} onClick={() => setActiveTab('singles')}>
           Singles
-        </button>
-        <button
-          type="button"
+        </FilterChip>
+        <FilterChip
+          active={activeTab === 'accumulators'}
           onClick={() => setActiveTab('accumulators')}
-          className={`rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
-            activeTab === 'accumulators'
-              ? 'bg-primary-600 text-white'
-              : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-          }`}
         >
           Accumulators
-        </button>
+        </FilterChip>
       </div>
 
       {activeTab === 'singles' ? (
         <>
+          {/* Stats — shown only when meaningful data exists */}
           {stats && (
-            <div className="mb-6 grid grid-cols-2 gap-4 sm:grid-cols-5">
-              <StatCard label="Total Predictions" value={stats.total} />
+            <div className="mb-6 grid grid-cols-2 gap-4 sm:grid-cols-4">
+              <StatCard label="Total Picks" value={stats.total} />
               <StatCard
                 label="Win Rate"
-                value={`${stats.winRate.toFixed(1)}%`}
-                subValue={`${stats.won}W - ${stats.lost}L settled`}
-                trend={stats.winRate >= 50 ? 'up' : 'down'}
+                value={settledCount > 0 ? `${stats.winRate.toFixed(1)}%` : '—'}
+                subValue={
+                  settledCount > 0 ? `${stats.won}W · ${stats.lost}L` : 'No settled picks yet'
+                }
+                trend={settledCount > 0 ? (stats.winRate >= 50 ? 'up' : 'down') : 'neutral'}
               />
               <StatCard
-                label="Total Winnings"
+                label="Points Earned"
                 value={formatPoints(stats.totalWinnings)}
-                subValue="points"
-                trend="up"
+                subValue="from winning picks"
+                trend={stats.totalWinnings > 0 ? 'up' : 'neutral'}
               />
-              <StatCard label="Pending" value={stats.pending} subValue="awaiting result" />
-              <StatCard label="Cashed Out" value={stats.cashedOut} subValue="closed early" />
+              <StatCard
+                label="Pending"
+                value={stats.pending}
+                subValue={stats.pending === 1 ? 'awaiting result' : 'awaiting results'}
+              />
             </div>
           )}
 
-          <div className="mb-6 flex gap-2">
+          {/* Status filters */}
+          <div className="mb-6 flex flex-wrap gap-2">
             {(['all', 'PENDING', 'WON', 'LOST', 'CASHED_OUT'] as const).map((value) => (
-              <button
+              <FilterChip
                 key={value}
-                type="button"
+                active={filter === value}
                 onClick={() => setFilter(value)}
-                className={`rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
-                  filter === value
-                    ? 'bg-primary-600 text-white'
-                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                }`}
               >
-                {value === 'all' ? 'All' : value.charAt(0) + value.slice(1).toLowerCase()}
-              </button>
+                {formatFilterLabel(value)}
+              </FilterChip>
             ))}
           </div>
 
@@ -212,18 +178,25 @@ export function PredictionsPage() {
               <Spinner size="lg" />
             </div>
           ) : singlesError ? (
-            <div className="py-12 text-center">
-              <p className="mb-4 text-red-600">{singlesError}</p>
-              <Button onClick={() => loadSingles()}>Retry</Button>
-            </div>
+            <InlineError message={singlesError} onRetry={() => void loadSingles()} />
           ) : predictions.length === 0 ? (
             <EmptyState
-              title="No predictions yet"
-              description="Browse events and add your first selection"
+              title={filter !== 'all' ? 'No picks in this category' : 'No picks yet'}
+              description={
+                filter !== 'all'
+                  ? 'Try switching to a different filter.'
+                  : 'Browse open events and add your first selection to get started.'
+              }
               action={
-                <Link to="/events">
-                  <Button>Browse Events</Button>
-                </Link>
+                filter !== 'all' ? (
+                  <Button variant="secondary" onClick={() => setFilter('all')}>
+                    Show all picks
+                  </Button>
+                ) : (
+                  <Link to="/events">
+                    <Button>Browse events</Button>
+                  </Link>
+                )
               }
             />
           ) : (
@@ -248,17 +221,14 @@ export function PredictionsPage() {
           <Spinner size="lg" />
         </div>
       ) : accumulatorsError ? (
-        <div className="py-12 text-center">
-          <p className="mb-4 text-red-600">{accumulatorsError}</p>
-          <Button onClick={() => loadAccumulators()}>Retry</Button>
-        </div>
+        <InlineError message={accumulatorsError} onRetry={() => void loadAccumulators()} />
       ) : accumulators.length === 0 ? (
         <EmptyState
           title="No accumulators yet"
-          description="Build a bet slip with at least two selections to place your first accumulator"
+          description="Build a slip with two or more selections to place your first accumulator."
           action={
             <Link to="/events">
-              <Button>Browse Events</Button>
+              <Button>Browse events</Button>
             </Link>
           }
         />
@@ -272,6 +242,10 @@ export function PredictionsPage() {
     </div>
   );
 }
+
+// =============================================================================
+// PREDICTION CARD
+// =============================================================================
 
 function PredictionCard({
   prediction,
@@ -325,11 +299,13 @@ function PredictionCard({
     <Card className="transition-shadow hover:shadow-md">
       <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
         <div className="min-w-0 flex-1">
-          <div className="mb-2 flex items-center gap-2">
-            <Badge className={getStatusColor(prediction.status)}>{prediction.status}</Badge>
-            {prediction.event && (
+          <div className="mb-2 flex flex-wrap items-center gap-2">
+            <Badge className={getStatusColor(prediction.status)}>
+              {formatFilterLabel(prediction.status)}
+            </Badge>
+            {prediction.event && prediction.event.status !== 'OPEN' && (
               <Badge className={getStatusColor(prediction.event.status)}>
-                Event: {prediction.event.status}
+                Event {prediction.event.status.toLowerCase()}
               </Badge>
             )}
           </div>
@@ -341,50 +317,57 @@ function PredictionCard({
           <div className="mt-2 text-sm text-gray-600">
             <p>
               Your pick:{' '}
-              <span className={`font-medium ${isWon ? 'text-green-600' : isLost ? 'text-red-600' : ''}`}>
+              <span
+                className={`font-medium ${
+                  isWon ? 'text-green-600' : isLost ? 'text-red-500' : ''
+                }`}
+              >
                 {prediction.predictedOutcome}
               </span>
             </p>
             {prediction.event?.finalOutcome && (
               <p>
-                Result: <span className="font-medium">{prediction.event.finalOutcome}</span>
+                Result:{' '}
+                <span className="font-medium text-gray-800">{prediction.event.finalOutcome}</span>
               </p>
             )}
           </div>
 
-          <p className="mt-1 text-xs text-gray-500">Placed {formatDate(prediction.createdAt)}</p>
+          <p className="mt-1 text-xs text-gray-400">Placed {formatDate(prediction.createdAt)}</p>
         </div>
 
         <div className="text-right sm:min-w-[140px]">
-          <p className="text-sm text-gray-500">Stake</p>
+          <p className="text-xs text-gray-400">Stake</p>
           <p className="font-semibold text-gray-900">{formatTokens(prediction.stakeAmount)} tokens</p>
 
           {isWon && prediction.payout && (
             <div className="mt-2">
-              <p className="text-sm text-green-600">Won</p>
-              <p className="text-lg font-bold text-green-600">+{formatPoints(prediction.payout)} points</p>
+              <p className="text-xs text-green-600">Won</p>
+              <p className="text-lg font-bold text-green-600">
+                +{formatPoints(prediction.payout)} pts
+              </p>
             </div>
           )}
 
           {isLost && (
             <div className="mt-2">
-              <p className="text-sm text-red-600">Lost</p>
-              <p className="font-bold text-red-600">-{formatTokens(prediction.stakeAmount)}</p>
+              <p className="text-xs text-red-500">Lost</p>
+              <p className="font-bold text-red-500">−{formatTokens(prediction.stakeAmount)}</p>
             </div>
           )}
 
           {isCashedOut && (
             <div className="mt-2">
-              <p className="text-sm text-amber-600">Cashed out</p>
+              <p className="text-xs text-amber-600">Cashed out</p>
               <p className="text-lg font-bold text-amber-600">
-                +{formatPoints(prediction.cashoutAmount ?? 0)} points
+                +{formatPoints(prediction.cashoutAmount ?? 0)} pts
               </p>
             </div>
           )}
 
           {isPending && prediction.event && (
             <div className="mt-2">
-              <p className="text-sm text-gray-500">Potential win</p>
+              <p className="text-xs text-gray-400">Potential win</p>
               <p className="font-medium text-primary-600">
                 {formatPoints(
                   Math.floor(
@@ -393,39 +376,59 @@ function PredictionCard({
                         ? Number(prediction.originalOdds)
                         : prediction.event.payoutMultiplier)
                   )
-                )}
+                )}{' '}
+                pts
               </p>
             </div>
           )}
         </div>
       </div>
 
+      {/* Cashout actions */}
       {isPending && (
         <div className="mt-4 border-t border-gray-100 pt-4">
           <div className="flex flex-wrap items-center gap-2">
-            <Button variant="secondary" onClick={handleCashoutValue} disabled={cashoutLoading}>
-              {cashoutValue === null ? 'Check Cashout' : `Cashout: ${formatPoints(cashoutValue)}`}
-            </Button>
-            <Button
-              onClick={handleCashout}
-              disabled={cashoutLoading || cashoutValue === null || cashoutValue <= 0}
-            >
-              Cash Out
-            </Button>
+            {cashoutValue === null ? (
+              <Button variant="secondary" size="sm" onClick={handleCashoutValue} isLoading={cashoutLoading}>
+                Check cashout value
+              </Button>
+            ) : (
+              <>
+                <span className="text-sm text-gray-600">
+                  Cashout value:{' '}
+                  <strong className="text-gray-900">{formatPoints(cashoutValue)} pts</strong>
+                </span>
+                <Button
+                  size="sm"
+                  onClick={handleCashout}
+                  isLoading={cashoutLoading}
+                  disabled={cashoutValue <= 0}
+                >
+                  Cash out now
+                </Button>
+              </>
+            )}
           </div>
         </div>
       )}
 
       {prediction.event && (
         <div className="mt-4 border-t border-gray-100 pt-4">
-          <Link to={`/events/${prediction.eventId}`} className="text-sm text-primary-600 hover:underline">
-            View event details →
+          <Link
+            to={`/events/${prediction.eventId}`}
+            className="text-sm font-medium text-primary-600 hover:text-primary-700 hover:underline"
+          >
+            View event →
           </Link>
         </div>
       )}
     </Card>
   );
 }
+
+// =============================================================================
+// ACCUMULATOR CARD
+// =============================================================================
 
 function AccumulatorCard({ accumulator }: { accumulator: Accumulator }) {
   const [expanded, setExpanded] = useState(false);
@@ -434,34 +437,51 @@ function AccumulatorCard({ accumulator }: { accumulator: Accumulator }) {
   const hasLost = accumulator.status === 'LOST';
   const isPending = accumulator.status === 'PENDING';
 
+  const statusDescription = isPending
+    ? 'Awaiting remaining legs'
+    : hasWon
+      ? 'All legs won — accumulator settled'
+      : hasLost
+        ? 'A leg has lost — accumulator settled'
+        : 'Accumulator settled';
+
   return (
     <Card className="transition-shadow hover:shadow-md">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <div className="mb-2 flex items-center gap-2">
-            <Badge className={getStatusColor(accumulator.status)}>{accumulator.status}</Badge>
-            <span className="text-xs text-gray-500">Placed {formatDate(accumulator.createdAt)}</span>
+            <Badge className={getStatusColor(accumulator.status)}>
+              {formatFilterLabel(accumulator.status)}
+            </Badge>
+            <span className="text-xs text-gray-400">
+              Placed {formatDate(accumulator.createdAt)}
+            </span>
           </div>
           <h3 className="font-semibold text-gray-900">{accumulator.legs.length}-Leg Accumulator</h3>
         </div>
 
         <div className="grid grid-cols-3 gap-4 text-right text-sm sm:min-w-[320px]">
           <div>
-            <p className="text-gray-500">Stake</p>
+            <p className="text-xs text-gray-400">Stake</p>
             <p className="font-semibold text-gray-900">{formatTokens(accumulator.stakeAmount)}</p>
           </div>
           <div>
-            <p className="text-gray-500">Odds</p>
-            <p className="font-semibold text-gray-900">{Number(accumulator.combinedOdds).toFixed(2)}x</p>
+            <p className="text-xs text-gray-400">Odds</p>
+            <p className="font-semibold text-gray-900">
+              {Number(accumulator.combinedOdds).toFixed(2)}×
+            </p>
           </div>
           <div>
-            <p className="text-gray-500">Payout</p>
+            <p className="text-xs text-gray-400">{hasWon ? 'Won' : 'Potential'}</p>
             <p
               className={`font-semibold ${
-                hasWon ? 'text-green-600' : hasLost ? 'text-red-600' : 'text-primary-600'
+                hasWon ? 'text-green-600' : hasLost ? 'text-red-500' : 'text-primary-600'
               }`}
             >
-              {formatPoints(hasWon ? accumulator.payout ?? accumulator.potentialPayout : accumulator.potentialPayout)}
+              {formatPoints(
+                hasWon ? (accumulator.payout ?? accumulator.potentialPayout) : accumulator.potentialPayout
+              )}{' '}
+              pts
             </p>
           </div>
         </div>
@@ -469,17 +489,9 @@ function AccumulatorCard({ accumulator }: { accumulator: Accumulator }) {
 
       <div className="mt-4 border-t border-gray-100 pt-4">
         <div className="mb-3 flex items-center justify-between">
-          <p className="text-sm text-gray-600">
-            {isPending
-              ? 'Awaiting remaining legs'
-              : hasWon
-                ? 'Accumulator settled as winner'
-                : hasLost
-                  ? 'Accumulator has lost'
-                  : 'Accumulator settled'}
-          </p>
-          <Button variant="ghost" size="sm" onClick={() => setExpanded((previous) => !previous)}>
-            {expanded ? 'Hide Legs' : 'Show Legs'}
+          <p className="text-sm text-gray-500">{statusDescription}</p>
+          <Button variant="ghost" size="sm" onClick={() => setExpanded((prev) => !prev)}>
+            {expanded ? 'Hide legs' : `Show ${accumulator.legs.length} legs`}
           </Button>
         </div>
 
@@ -505,16 +517,25 @@ function AccumulatorLegRow({ leg }: { leg: AccumulatorLeg }) {
           ? '↩'
           : '⏳';
 
+  const statusLabel =
+    leg.status === 'WON'
+      ? 'Won'
+      : leg.status === 'LOST'
+        ? 'Lost'
+        : leg.status === 'REFUNDED'
+          ? 'Refunded'
+          : 'Pending';
+
   return (
-    <div className="flex items-center justify-between rounded-lg border border-gray-200 px-3 py-2 text-sm">
+    <div className="flex items-center justify-between rounded-lg border border-gray-100 bg-gray-50/50 px-3 py-2.5 text-sm">
       <div className="min-w-0">
         <p className="truncate font-medium text-gray-900">{leg.event?.title ?? leg.eventId}</p>
-        <p className="text-gray-600">
-          {leg.predictedOutcome} ({Number(leg.odds).toFixed(2)}x)
+        <p className="text-xs text-gray-500">
+          {leg.predictedOutcome} · {Number(leg.odds).toFixed(2)}×
         </p>
       </div>
-      <span className="ml-3 shrink-0 text-gray-700">
-        {icon} {leg.status}
+      <span className="ml-3 shrink-0 text-sm text-gray-600">
+        {icon} {statusLabel}
       </span>
     </div>
   );

@@ -27,14 +27,14 @@ export function LeaderboardPreview({
 }: LeaderboardPreviewProps) {
   const [data, setData] = useState<LeaderboardResponse | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [loadError, setLoadError] = useState('');
+  const [unavailable, setUnavailable] = useState(false);
 
   useEffect(() => {
     let isCancelled = false;
 
     async function loadPreview() {
       setIsLoading(true);
-      setLoadError('');
+      setUnavailable(false);
 
       try {
         const result = await api.getLeaderboard(period, limit);
@@ -43,7 +43,7 @@ export function LeaderboardPreview({
         }
       } catch {
         if (!isCancelled) {
-          setLoadError('Unable to load leaderboard.');
+          setUnavailable(true);
         }
       } finally {
         if (!isCancelled) {
@@ -82,7 +82,7 @@ export function LeaderboardPreview({
         </Link>
       </div>
 
-      {data && (
+      {data && !unavailable && (
         <div className="mb-4 flex flex-wrap items-center gap-2">
           <Badge className="bg-white/15 text-white">Period {data.periodKey}</Badge>
           {data.userRank && (
@@ -97,9 +97,9 @@ export function LeaderboardPreview({
         <div className="flex justify-center py-8">
           <Spinner />
         </div>
-      ) : loadError ? (
-        <p className="rounded-lg border border-red-300/30 bg-red-500/10 px-4 py-3 text-sm text-red-100">
-          {loadError}
+      ) : unavailable ? (
+        <p className="rounded-lg border border-white/10 bg-white/5 px-4 py-5 text-center text-sm text-white/55">
+          Rankings aren't available right now — check back shortly.
         </p>
       ) : entries.length === 0 ? (
         <p className="rounded-lg border border-white/10 bg-white/5 px-4 py-6 text-sm text-white/75">

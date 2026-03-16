@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { api } from '../lib/api';
-import { useToast } from '../context/ToastContext';
-import { Card, Badge, Spinner, Button, EmptyState } from '../components/ui';
+import { Card, Badge, Spinner, Button, EmptyState, InlineError } from '../components/ui';
 import { formatDate, formatPoints, formatTokens, getTransactionLabel } from '../lib/utils';
 import type { PointsTransaction, TokenTransaction } from '../types';
 
@@ -18,7 +17,6 @@ type CombinedTransaction = {
 const PAGE_SIZE = 100;
 
 export function TransactionsPage() {
-  const { error: showError } = useToast();
   const [isLoading, setIsLoading] = useState(true);
   const [transactions, setTransactions] = useState<CombinedTransaction[]>([]);
   const [error, setError] = useState('');
@@ -44,8 +42,7 @@ export function TransactionsPage() {
 
       setTransactions(combined);
     } catch {
-      setError('Failed to load transactions.');
-      showError('Failed to load transactions. Please try again.');
+      setError('Your activity could not be loaded right now.');
     } finally {
       setIsLoading(false);
     }
@@ -69,24 +66,33 @@ export function TransactionsPage() {
     <div>
       <div className="mb-6 flex items-end justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Transaction History</h1>
-          <p className="mt-1 text-gray-600">Your token and points ledger activity</p>
+          <h1 className="text-2xl font-bold text-gray-900">Activity</h1>
+          <p className="mt-1 text-sm text-gray-500">Your token and points history</p>
         </div>
-        <Button variant="secondary" onClick={loadTransactions} disabled={isLoading}>
+        <Button variant="secondary" size="sm" onClick={() => void loadTransactions()} disabled={isLoading}>
           Refresh
         </Button>
       </div>
 
-      <div className="mb-6 grid grid-cols-2 gap-4">
-        <Card>
-          <p className="text-sm text-gray-500">Token Entries</p>
-          <p className="text-2xl font-semibold text-primary-700">{groupedCounts.tokens}</p>
-        </Card>
-        <Card>
-          <p className="text-sm text-gray-500">Points Entries</p>
-          <p className="text-2xl font-semibold text-emerald-700">{groupedCounts.points}</p>
-        </Card>
-      </div>
+      {/* Summary */}
+      {transactions.length > 0 && (
+        <div className="mb-6 grid grid-cols-2 gap-4">
+          <Card padding="sm">
+            <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">Tokens</p>
+            <p className="mt-1 text-2xl font-semibold text-primary-700">{groupedCounts.tokens}</p>
+            <p className="text-xs text-gray-400">
+              {groupedCounts.tokens === 1 ? 'entry' : 'entries'}
+            </p>
+          </Card>
+          <Card padding="sm">
+            <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">Points</p>
+            <p className="mt-1 text-2xl font-semibold text-emerald-700">{groupedCounts.points}</p>
+            <p className="text-xs text-gray-400">
+              {groupedCounts.points === 1 ? 'entry' : 'entries'}
+            </p>
+          </Card>
+        </div>
+      )}
 
       <Card>
         {isLoading ? (
@@ -94,14 +100,11 @@ export function TransactionsPage() {
             <Spinner />
           </div>
         ) : error ? (
-          <div className="py-10 text-center">
-            <p className="mb-4 text-red-600">{error}</p>
-            <Button onClick={loadTransactions}>Retry</Button>
-          </div>
+          <InlineError message={error} onRetry={() => void loadTransactions()} />
         ) : transactions.length === 0 ? (
           <EmptyState
-            title="No transactions yet"
-            description="Your token and points history will appear here."
+            title="No activity yet"
+            description="Your token and points movements will appear here as you make predictions."
           />
         ) : (
           <div className="divide-y divide-gray-100">
@@ -117,35 +120,36 @@ export function TransactionsPage() {
 
 function TransactionRow({ transaction }: { transaction: CombinedTransaction }) {
   const isCredit = transaction.amount > 0;
+  const currencyLabel = transaction.currency === 'TOKENS' ? 'Tokens' : 'Points';
 
   return (
-    <div className="flex flex-col gap-3 py-3 sm:flex-row sm:items-center sm:justify-between">
+    <div className="flex flex-col gap-3 py-3.5 sm:flex-row sm:items-center sm:justify-between">
       <div className="min-w-0">
         <div className="mb-1 flex flex-wrap items-center gap-2">
           <Badge
             className={
               transaction.currency === 'TOKENS'
-                ? 'bg-primary-100 text-primary-800'
-                : 'bg-emerald-100 text-emerald-800'
+                ? 'bg-primary-50 text-primary-700'
+                : 'bg-emerald-50 text-emerald-700'
             }
           >
-            {transaction.currency}
+            {currencyLabel}
           </Badge>
-          <Badge className="bg-gray-100 text-gray-700">{getTransactionLabel(transaction.type)}</Badge>
+          <Badge className="bg-gray-100 text-gray-600">{getTransactionLabel(transaction.type)}</Badge>
         </div>
-        <p className="text-xs text-gray-500">{formatDate(transaction.createdAt)}</p>
+        <p className="text-xs text-gray-400">{formatDate(transaction.createdAt)}</p>
         {transaction.description && (
           <p className="mt-1 text-sm text-gray-600">{transaction.description}</p>
         )}
       </div>
 
       <div className="text-left sm:text-right">
-        <p className={`font-semibold ${isCredit ? 'text-green-600' : 'text-red-600'}`}>
-          {isCredit ? '+' : '-'}
+        <p className={`font-semibold ${isCredit ? 'text-green-600' : 'text-red-500'}`}>
+          {isCredit ? '+' : '−'}
           {formatAmount(transaction.currency, Math.abs(transaction.amount))}
         </p>
-        <p className="text-xs text-gray-500">
-          Running balance: {formatAmount(transaction.currency, transaction.balanceAfter)}
+        <p className="text-xs text-gray-400">
+          Balance: {formatAmount(transaction.currency, transaction.balanceAfter)}
         </p>
       </div>
     </div>

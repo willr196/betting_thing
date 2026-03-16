@@ -83,42 +83,50 @@ export function Layout() {
         <nav className="mx-auto max-w-7xl overflow-hidden rounded-[30px] border border-white/75 bg-white/82 shadow-[0_28px_70px_-48px_rgba(15,23,42,0.55)] backdrop-blur-2xl">
           <div className="px-4 sm:px-6 lg:px-8">
             <div className="flex min-h-16 justify-between gap-4 py-3">
-              {/* Logo & Nav Links */}
+              {/* Logo & primary nav */}
               <div className="flex items-center gap-3">
                 <Link to="/" className="flex items-center gap-3">
-                  <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[linear-gradient(135deg,rgba(47,114,106,1),rgba(199,103,23,0.92))] text-lg shadow-[0_18px_35px_-18px_rgba(47,114,106,0.95)]">🎯</span>
+                  <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[linear-gradient(135deg,rgba(47,114,106,1),rgba(199,103,23,0.92))] text-lg shadow-[0_18px_35px_-18px_rgba(47,114,106,0.95)]">
+                    🎯
+                  </span>
                   <div>
                     <p className="text-[0.65rem] font-semibold uppercase tracking-[0.3em] text-gray-400">
                       Prediction Platform
                     </p>
-                    <span className="text-lg font-semibold text-gray-900">
-                      Predict
-                    </span>
+                    <span className="text-lg font-semibold text-gray-900">Predict</span>
                   </div>
                 </Link>
 
-                <div className="hidden sm:flex sm:ml-8 sm:flex-wrap sm:gap-2">
-                  {isAuthenticated ? (
-                    <>
-                      <NavItem to="/events">Events</NavItem>
-                      <NavItem to="/football">Football</NavItem>
-                      <NavItem to="/predictions">My Predictions</NavItem>
-                      <NavItem to="/leagues">
-                        Leagues
-                        {leagueCount > 0 && (
-                          <span className="ml-1 rounded-full bg-primary-600 px-1.5 py-0.5 text-xs text-white">
-                            {leagueCount}
-                          </span>
-                        )}
-                      </NavItem>
-                      <NavItem to="/leaderboard">Leaderboard</NavItem>
-                      <NavItem to="/transactions">Transactions</NavItem>
-                      <NavItem to="/rewards">Rewards</NavItem>
-                    </>
-                  ) : (
+                {isAuthenticated && (
+                  <div className="hidden sm:flex sm:ml-6 sm:items-center sm:gap-1">
+                    {/* Primary navigation */}
+                    <NavItem to="/events">Events</NavItem>
+                    <NavItem to="/football">Football</NavItem>
+                    <NavItem to="/predictions">My Picks</NavItem>
+                    <NavItem to="/leagues">
+                      Leagues
+                      {leagueCount > 0 && (
+                        <span className="ml-1 rounded-full bg-primary-600 px-1.5 py-0.5 text-xs text-white">
+                          {leagueCount}
+                        </span>
+                      )}
+                    </NavItem>
                     <NavItem to="/leaderboard">Leaderboard</NavItem>
-                  )}
-                </div>
+
+                    {/* Visual separator */}
+                    <div className="mx-2 h-4 w-px bg-gray-200" />
+
+                    {/* Utility navigation */}
+                    <NavItemSecondary to="/transactions">Activity</NavItemSecondary>
+                    <NavItemSecondary to="/rewards">Rewards</NavItemSecondary>
+                  </div>
+                )}
+
+                {!isAuthenticated && (
+                  <div className="hidden sm:flex sm:ml-6">
+                    <NavItem to="/leaderboard">Leaderboard</NavItem>
+                  </div>
+                )}
               </div>
 
               {/* Right side */}
@@ -130,7 +138,7 @@ export function Layout() {
                         to="/wallet"
                         className="flex items-center rounded-full border border-primary-100 bg-primary-50/90 px-3 py-1.5 transition-colors hover:bg-primary-100"
                       >
-                        <span className="text-lg mr-1">🪙</span>
+                        <span className="mr-1 text-lg">🪙</span>
                         <span className="font-semibold text-primary-700">
                           {formatTokens(user?.tokenBalance ?? 0)}
                         </span>
@@ -139,7 +147,7 @@ export function Layout() {
                         to="/wallet"
                         className="flex items-center rounded-full border border-emerald-100 bg-emerald-50/90 px-3 py-1.5 transition-colors hover:bg-emerald-100"
                       >
-                        <span className="text-lg mr-1">🏆</span>
+                        <span className="mr-1 text-lg">🏆</span>
                         <span className="font-semibold text-emerald-700">
                           {formatPoints(user?.pointsBalance ?? 0)}
                         </span>
@@ -152,11 +160,9 @@ export function Layout() {
                       )}
                     </div>
 
-                    {/* User Menu */}
+                    {/* User actions */}
                     <div className="flex items-center gap-2">
-                      <span className="hidden text-sm text-gray-600 sm:block">
-                        {user?.email}
-                      </span>
+                      <span className="hidden text-sm text-gray-500 sm:block">{user?.email}</span>
                       <Button variant="ghost" size="sm" onClick={handleLogout}>
                         Logout
                       </Button>
@@ -178,16 +184,18 @@ export function Layout() {
             </div>
           </div>
 
+          {/* Mobile nav */}
           <div className="border-t border-white/70 sm:hidden">
-            <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-2 px-3 py-3">
+            <div className="flex flex-wrap items-center justify-center gap-x-2 gap-y-2 px-3 py-3">
               {isAuthenticated ? (
                 <>
                   <MobileNavItem to="/events">Events</MobileNavItem>
                   <MobileNavItem to="/football">Football</MobileNavItem>
-                  <MobileNavItem to="/predictions">Predictions</MobileNavItem>
+                  <MobileNavItem to="/predictions">My Picks</MobileNavItem>
                   <MobileNavItem to="/leagues">Leagues</MobileNavItem>
-                  <MobileNavItem to="/leaderboard">Leaders</MobileNavItem>
-                  <MobileNavItem to="/transactions">History</MobileNavItem>
+                  <MobileNavItem to="/leaderboard">Leaderboard</MobileNavItem>
+                  <span className="h-3 w-px bg-gray-200" />
+                  <MobileNavItem to="/transactions">Activity</MobileNavItem>
                   <MobileNavItem to="/rewards">Rewards</MobileNavItem>
                   <MobileNavItem to="/wallet">Wallet</MobileNavItem>
                 </>
@@ -228,7 +236,24 @@ function NavItem({ to, children }: { to: string; children: React.ReactNode }) {
         `rounded-full px-3.5 py-2 text-sm font-semibold transition-colors ${
           isActive
             ? 'bg-primary-50 text-primary-700'
-            : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
+            : 'text-gray-700 hover:bg-gray-100 hover:text-gray-900'
+        }`
+      }
+    >
+      {children}
+    </NavLink>
+  );
+}
+
+function NavItemSecondary({ to, children }: { to: string; children: React.ReactNode }) {
+  return (
+    <NavLink
+      to={to}
+      className={({ isActive }) =>
+        `rounded-full px-3 py-2 text-sm font-medium transition-colors ${
+          isActive
+            ? 'bg-gray-100 text-gray-700'
+            : 'text-gray-500 hover:bg-gray-50 hover:text-gray-700'
         }`
       }
     >
@@ -243,7 +268,7 @@ function MobileNavItem({ to, children }: { to: string; children: React.ReactNode
       to={to}
       className={({ isActive }) =>
         `rounded-full px-3 py-1.5 text-xs font-semibold ${
-          isActive ? 'bg-primary-50 text-primary-700' : 'text-gray-600'
+          isActive ? 'bg-primary-50 text-primary-700' : 'text-gray-500'
         }`
       }
     >

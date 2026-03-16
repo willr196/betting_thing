@@ -1,4 +1,5 @@
 import { type InputHTMLAttributes, type ButtonHTMLAttributes, forwardRef } from 'react';
+import type { ReactNode } from 'react';
 
 // =============================================================================
 // BUTTON
@@ -166,17 +167,113 @@ export function Spinner({ size = 'md' }: { size?: 'sm' | 'md' | 'lg' }) {
 interface EmptyStateProps {
   title: string;
   description?: string;
-  action?: React.ReactNode;
-  icon?: React.ReactNode;
+  action?: ReactNode;
+  icon?: ReactNode;
 }
 
 export function EmptyState({ title, description, action, icon }: EmptyStateProps) {
   return (
-    <div className="text-center py-12">
-      {icon && <div className="mb-4 text-gray-400">{icon}</div>}
-      <h3 className="text-lg font-medium text-gray-900">{title}</h3>
-      {description && <p className="mt-1 text-sm text-gray-500">{description}</p>}
-      {action && <div className="mt-4">{action}</div>}
+    <div className="flex flex-col items-center py-14 text-center">
+      {icon && <div className="mb-4 text-4xl text-gray-300">{icon}</div>}
+      <h3 className="text-base font-semibold text-gray-800">{title}</h3>
+      {description && <p className="mt-1.5 max-w-sm text-sm text-gray-500">{description}</p>}
+      {action && <div className="mt-5">{action}</div>}
+    </div>
+  );
+}
+
+// =============================================================================
+// FILTER CHIP
+// =============================================================================
+
+interface FilterChipProps {
+  active: boolean;
+  onClick: () => void;
+  children: ReactNode;
+}
+
+export function FilterChip({ active, onClick, children }: FilterChipProps) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`rounded-full px-3.5 py-1.5 text-sm font-medium transition-colors ${
+        active
+          ? 'bg-primary-600 text-white shadow-sm'
+          : 'border border-gray-200 bg-white/80 text-gray-600 hover:border-gray-300 hover:bg-white'
+      }`}
+    >
+      {children}
+    </button>
+  );
+}
+
+// =============================================================================
+// SKELETON / LOADING PLACEHOLDER
+// =============================================================================
+
+export function SkeletonBlock({ className = '' }: { className?: string }) {
+  return <div className={`animate-pulse rounded-xl bg-gray-100 ${className}`} />;
+}
+
+export function SkeletonCard() {
+  return (
+    <Card>
+      <SkeletonBlock className="mb-3 h-4 w-1/3" />
+      <SkeletonBlock className="mb-2 h-6 w-2/3" />
+      <SkeletonBlock className="mb-2 h-4 w-full" />
+      <SkeletonBlock className="h-4 w-3/4" />
+    </Card>
+  );
+}
+
+// =============================================================================
+// PAGE HEADER
+// =============================================================================
+
+interface PageHeaderProps {
+  title: string;
+  subtitle?: string;
+  action?: ReactNode;
+}
+
+export function PageHeader({ title, subtitle, action }: PageHeaderProps) {
+  return (
+    <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+      <div>
+        <h1 className="text-2xl font-bold text-gray-900">{title}</h1>
+        {subtitle && <p className="mt-1 text-sm text-gray-500">{subtitle}</p>}
+      </div>
+      {action && <div className="shrink-0">{action}</div>}
+    </div>
+  );
+}
+
+// =============================================================================
+// INLINE ERROR STATE
+// =============================================================================
+
+interface InlineErrorProps {
+  message?: string;
+  onRetry?: () => void;
+}
+
+export function InlineError({
+  message = "Something went wrong. Please try again.",
+  onRetry,
+}: InlineErrorProps) {
+  return (
+    <div className="flex flex-col items-center py-14 text-center">
+      <p className="text-sm text-gray-500">{message}</p>
+      {onRetry && (
+        <button
+          type="button"
+          onClick={onRetry}
+          className="mt-4 rounded-full border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50"
+        >
+          Try again
+        </button>
+      )}
     </div>
   );
 }

@@ -2,7 +2,7 @@ import { FormEvent, ReactNode, useEffect, useMemo, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { api, ApiError } from '../lib/api';
 import { useToast } from '../context/ToastContext';
-import { Badge, Button, Card, EmptyState, Input, Spinner } from '../components/ui';
+import { Badge, Button, Card, Input, InlineError, Spinner } from '../components/ui';
 import { formatPoints, formatDate } from '../lib/utils';
 import type { LeagueListItem } from '../types';
 
@@ -35,9 +35,7 @@ export function LeaguesPage() {
 
   useEffect(() => {
     setJoinCode(inviteFromQuery);
-    if (inviteFromQuery) {
-      setShowJoin(true);
-    }
+    if (inviteFromQuery) setShowJoin(true);
   }, [inviteFromQuery]);
 
   useEffect(() => {
@@ -51,7 +49,7 @@ export function LeaguesPage() {
       const data = await api.getMyLeagues();
       setLeagues(data.leagues);
     } catch {
-      setLoadError('Failed to load leagues.');
+      setLoadError('Your leagues could not be loaded right now.');
     } finally {
       setIsLoading(false);
     }
@@ -67,14 +65,10 @@ export function LeaguesPage() {
         description: createDescription.trim() || undefined,
         emoji: createEmoji,
       });
-      showSuccess('League created');
+      showSuccess('League created successfully');
       navigate(`/leagues/${result.league.id}`);
     } catch (error) {
-      if (error instanceof ApiError) {
-        showError(error.message);
-      } else {
-        showError('Failed to create league');
-      }
+      showError(error instanceof ApiError ? error.message : 'Failed to create league');
     } finally {
       setCreateLoading(false);
     }
@@ -86,14 +80,10 @@ export function LeaguesPage() {
 
     try {
       const result = await api.joinLeague(joinCode);
-      showSuccess('Joined league');
+      showSuccess("You've joined the league");
       navigate(`/leagues/${result.league.id}`);
     } catch (error) {
-      if (error instanceof ApiError) {
-        showError(error.message);
-      } else {
-        showError('Failed to join league');
-      }
+      showError(error instanceof ApiError ? error.message : 'Failed to join league');
     } finally {
       setJoinLoading(false);
     }
@@ -101,14 +91,16 @@ export function LeaguesPage() {
 
   return (
     <div>
-      <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+      <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Leagues</h1>
-          <p className="mt-1 text-gray-600">Create private leagues and compete with friends</p>
+          <p className="mt-1 text-sm text-gray-500">
+            Compete with friends in private leagues and track your standings.
+          </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex shrink-0 gap-2">
           <Button variant="secondary" onClick={() => setShowJoin(true)}>
-            Join League
+            Join a League
           </Button>
           <Button onClick={() => setShowCreate(true)}>Create League</Button>
         </div>
@@ -119,92 +111,50 @@ export function LeaguesPage() {
           <Spinner size="lg" />
         </div>
       ) : loadError ? (
-        <Card>
-          <div className="space-y-3 text-center">
-            <p className="text-red-600">{loadError}</p>
-            <Button onClick={() => void loadLeagues()}>Retry</Button>
-          </div>
-        </Card>
+        <InlineError message={loadError} onRetry={() => void loadLeagues()} />
       ) : leagues.length === 0 ? (
-        <EmptyState
-          title="No leagues yet"
-          description="Create your first league or join one with an invite code."
-          action={
-            <div className="flex justify-center gap-2">
-              <Button variant="secondary" onClick={() => setShowJoin(true)}>
-                Join League
-              </Button>
-              <Button onClick={() => setShowCreate(true)}>Create League</Button>
-            </div>
-          }
+        <LeaguesEmptyState
+          onCreateClick={() => setShowCreate(true)}
+          onJoinClick={() => setShowJoin(true)}
         />
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {leagues.map((league) => (
-            <Card key={league.id} className="hover:shadow-md transition-shadow">
-              <div className="mb-3 flex items-center justify-between">
-                <span className="text-2xl">{league.emoji}</span>
-                <Badge className={league.isOpen ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'}>
-                  {league.isOpen ? 'Open' : 'Closed'}
-                </Badge>
-              </div>
-              <h3 className="text-lg font-semibold text-gray-900">{league.name}</h3>
-              {league.description && (
-                <p className="mt-1 text-sm text-gray-600 line-clamp-2">{league.description}</p>
-              )}
-
-              <div className="mt-4 space-y-1 text-sm text-gray-600">
-                <p>Members: {league.memberCount}/{league.maxMembers}</p>
-                <p>Role: {league.role}</p>
-                {league.weekly ? (
-                  <p>
-                    This week: #{league.weekly.rank} • {formatPoints(league.weekly.pointsEarned)}
-                  </p>
-                ) : (
-                  <p>This week: no standings yet</p>
-                )}
-                <p>Joined: {formatDate(league.joinedAt)}</p>
-              </div>
-
-              <Link
-                to={`/leagues/${league.id}`}
-                className="mt-4 block rounded-lg bg-primary-600 px-4 py-2 text-center text-sm font-medium text-white hover:bg-primary-700"
-              >
-                View League
-              </Link>
-            </Card>
+            <LeagueCard key={league.id} league={league} />
           ))}
         </div>
       )}
 
       {showCreate && (
-        <Modal onClose={() => setShowCreate(false)} title="Create League">
+        <Modal onClose={() => setShowCreate(false)} title="Create a league">
           <form className="space-y-4" onSubmit={handleCreateLeague}>
             <Input
-              label="Name"
+              label="League name"
               value={createName}
               onChange={(event) => setCreateName(event.target.value)}
               minLength={2}
               maxLength={50}
               required
+              placeholder="e.g. The Wednesday Crew"
             />
             <Input
-              label="Description"
+              label="Description (optional)"
               value={createDescription}
               onChange={(event) => setCreateDescription(event.target.value)}
               maxLength={200}
+              placeholder="What's this league about?"
             />
             <div>
-              <p className="mb-2 text-sm font-medium text-gray-700">Emoji</p>
+              <p className="mb-2 text-sm font-medium text-gray-700">Pick an icon</p>
               <div className="flex flex-wrap gap-2">
                 {EMOJI_OPTIONS.map((emoji) => (
                   <button
                     key={emoji}
                     type="button"
                     onClick={() => setCreateEmoji(emoji)}
-                    className={`rounded-lg border px-3 py-2 text-xl ${
+                    className={`rounded-xl border px-3 py-2 text-xl transition-colors ${
                       createEmoji === emoji
-                        ? 'border-primary-500 bg-primary-50'
+                        ? 'border-primary-400 bg-primary-50 shadow-sm'
                         : 'border-gray-200 hover:bg-gray-50'
                     }`}
                   >
@@ -213,7 +163,7 @@ export function LeaguesPage() {
                 ))}
               </div>
             </div>
-            <div className="flex justify-end gap-2">
+            <div className="flex justify-end gap-2 pt-2">
               <Button variant="ghost" type="button" onClick={() => setShowCreate(false)}>
                 Cancel
               </Button>
@@ -226,18 +176,22 @@ export function LeaguesPage() {
       )}
 
       {showJoin && (
-        <Modal onClose={() => setShowJoin(false)} title="Join League">
+        <Modal onClose={() => setShowJoin(false)} title="Join a league">
+          <p className="mb-4 text-sm text-gray-500">
+            Enter the 8-character invite code shared by the league owner.
+          </p>
           <form className="space-y-4" onSubmit={handleJoinLeague}>
             <Input
-              label="Invite Code"
+              label="Invite code"
               value={joinCode}
               onChange={(event) => setJoinCode(event.target.value.toUpperCase().trim())}
               minLength={8}
               maxLength={8}
               required
               placeholder="ABCD1234"
+              className="font-mono tracking-widest"
             />
-            <div className="flex justify-end gap-2">
+            <div className="flex justify-end gap-2 pt-2">
               <Button variant="ghost" type="button" onClick={() => setShowJoin(false)}>
                 Cancel
               </Button>
@@ -251,6 +205,150 @@ export function LeaguesPage() {
     </div>
   );
 }
+
+// =============================================================================
+// EMPTY STATE
+// =============================================================================
+
+function LeaguesEmptyState({
+  onCreateClick,
+  onJoinClick,
+}: {
+  onCreateClick: () => void;
+  onJoinClick: () => void;
+}) {
+  return (
+    <div className="space-y-6">
+      {/* Primary empty state */}
+      <div className="rounded-2xl border border-dashed border-gray-200 bg-white/60 px-6 py-10 text-center">
+        <div className="mx-auto mb-3 text-4xl">🏆</div>
+        <h3 className="font-semibold text-gray-800">You're not in any leagues yet</h3>
+        <p className="mx-auto mt-1.5 max-w-sm text-sm text-gray-500">
+          Create a private league to compete with friends, or join one using an invite code.
+        </p>
+        <div className="mt-5 flex justify-center gap-3">
+          <Button variant="secondary" onClick={onJoinClick}>
+            Join a League
+          </Button>
+          <Button onClick={onCreateClick}>Create League</Button>
+        </div>
+      </div>
+
+      {/* Value prop cards */}
+      <div>
+        <p className="mb-3 text-xs font-semibold uppercase tracking-[0.2em] text-gray-400">
+          Why join a league?
+        </p>
+        <div className="grid gap-3 sm:grid-cols-3">
+          <ValueCard
+            icon="⚔️"
+            title="Private competition"
+            description="Compete head-to-head with people you know across every week."
+          />
+          <ValueCard
+            icon="📊"
+            title="Track standings"
+            description="See weekly and all-time rankings for everyone in your league."
+          />
+          <ValueCard
+            icon="🔗"
+            title="Easy to invite"
+            description="Share a simple code and your friends can join in seconds."
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ValueCard({
+  icon,
+  title,
+  description,
+}: {
+  icon: string;
+  title: string;
+  description: string;
+}) {
+  return (
+    <Card padding="sm" className="text-center">
+      <div className="mb-2 text-2xl">{icon}</div>
+      <p className="font-semibold text-gray-800">{title}</p>
+      <p className="mt-1 text-xs text-gray-500">{description}</p>
+    </Card>
+  );
+}
+
+// =============================================================================
+// LEAGUE CARD
+// =============================================================================
+
+function LeagueCard({ league }: { league: LeagueListItem }) {
+  const isOwner = league.role === 'OWNER';
+
+  return (
+    <Card className="flex flex-col transition-shadow hover:shadow-md">
+      <div className="mb-3 flex items-center justify-between">
+        <span className="text-2xl">{league.emoji}</span>
+        <div className="flex items-center gap-1.5">
+          {isOwner && (
+            <Badge className="bg-amber-50 text-amber-700">Owner</Badge>
+          )}
+          <Badge
+            className={
+              league.isOpen ? 'bg-emerald-50 text-emerald-700' : 'bg-gray-100 text-gray-500'
+            }
+          >
+            {league.isOpen ? 'Open' : 'Closed'}
+          </Badge>
+        </div>
+      </div>
+
+      <h3 className="text-base font-semibold text-gray-900">{league.name}</h3>
+
+      {league.description && (
+        <p className="mt-1 line-clamp-2 text-sm text-gray-500">{league.description}</p>
+      )}
+
+      <div className="mt-4 space-y-1 text-sm text-gray-500">
+        <div className="flex items-center justify-between">
+          <span>Members</span>
+          <span className="font-medium text-gray-700">
+            {league.memberCount} / {league.maxMembers}
+          </span>
+        </div>
+        {league.weekly ? (
+          <div className="flex items-center justify-between">
+            <span>This week</span>
+            <span className="font-medium text-gray-700">
+              #{league.weekly.rank} · {formatPoints(league.weekly.pointsEarned)} pts
+            </span>
+          </div>
+        ) : (
+          <div className="flex items-center justify-between">
+            <span>This week</span>
+            <span className="text-gray-400">No picks yet</span>
+          </div>
+        )}
+        <div className="flex items-center justify-between">
+          <span>Joined</span>
+          <span className="font-medium text-gray-700">{formatDate(league.joinedAt)}</span>
+        </div>
+      </div>
+
+      <Link
+        to={`/leagues/${league.id}`}
+        className="mt-5 block w-full rounded-xl bg-primary-600 py-2.5 text-center text-sm font-semibold text-white transition-colors hover:bg-primary-700"
+      >
+        View League
+      </Link>
+    </Card>
+  );
+}
+
+// =============================================================================
+// MODAL
+// =============================================================================
 
 function Modal({
   children,
@@ -266,7 +364,11 @@ function Modal({
       <Card className="w-full max-w-lg">
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-lg font-semibold text-gray-900">{title}</h2>
-          <button type="button" onClick={onClose} className="text-gray-500 hover:text-gray-700">
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-lg p-1 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600"
+          >
             ✕
           </button>
         </div>
