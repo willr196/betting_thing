@@ -23,8 +23,9 @@ const {
 vi.mock('../config/index.js', () => ({
   config: {
     tokens: {
-      dailyAllowance: 5,
-      maxAllowance: 35,
+      weeklyStart: 5,
+      dailyAllowance: 1,
+      maxAllowance: 11,
     },
   },
 }));
@@ -72,19 +73,54 @@ describe('TokenAllowanceService', () => {
     vi.useRealTimers();
   });
 
-  it('tops users back up to the weekly cap after Sunday has passed', async () => {
-    vi.setSystemTime(new Date('2026-03-09T00:05:00.000Z'));
+  it('grants the weekly opening allowance when no allowance record exists', async () => {
+    vi.setSystemTime(new Date('2026-03-09T09:15:00.000Z'));
 
     queryRawMock
-      .mockResolvedValueOnce([{ tokenBalance: 12 }])
+      .mockResolvedValueOnce([{ tokenBalance: 0 }])
+      .mockResolvedValueOnce([]);
+    creditMock.mockResolvedValue({ transactionId: 'tx_credit', newBalance: 5 });
+    tokenAllowanceCreateMock.mockResolvedValue({});
+
+    const result = await TokenAllowanceService.getOrCreateStatus('user_1');
+
+    expect(creditMock).toHaveBeenCalledWith(
+      {
+        userId: 'user_1',
+        amount: 5,
+        type: 'DAILY_ALLOWANCE',
+        description: 'Weekly token allowance',
+      },
+      expect.anything()
+    );
+    expect(tokenAllowanceCreateMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          userId: 'user_1',
+          tokensRemaining: 5,
+          lastResetDate: new Date('2026-03-09T00:00:00.000Z'),
+        }),
+      })
+    );
+    expect(result).toEqual({
+      tokensRemaining: 5,
+      lastResetDate: new Date('2026-03-09T00:00:00.000Z'),
+    });
+  });
+
+  it('tops the user up to the current weekly entitlement after a week rollover', async () => {
+    vi.setSystemTime(new Date('2026-03-18T12:00:00.000Z'));
+
+    queryRawMock
+      .mockResolvedValueOnce([{ tokenBalance: 3 }])
       .mockResolvedValueOnce([
         {
           id: 'allowance_1',
-          tokensRemaining: 12,
-          lastResetDate: new Date('2026-03-02T00:00:00.000Z'),
+          tokensRemaining: 6,
+          lastResetDate: new Date('2026-03-15T00:00:00.000Z'),
         },
       ]);
-    creditMock.mockResolvedValue({ transactionId: 'tx_credit', newBalance: 35 });
+    creditMock.mockResolvedValue({ transactionId: 'tx_credit', newBalance: 7 });
     tokenAllowanceUpsertMock.mockResolvedValue({});
 
     const result = await TokenAllowanceService.getOrCreateStatus('user_1');
@@ -92,35 +128,75 @@ describe('TokenAllowanceService', () => {
     expect(creditMock).toHaveBeenCalledWith(
       {
         userId: 'user_1',
-        amount: 23,
+        amount: 4,
         type: 'DAILY_ALLOWANCE',
-        description: 'Weekly token reset',
+        description: 'Weekly token allowance',
       },
       expect.anything()
     );
     expect(tokenAllowanceUpsertMock).toHaveBeenCalledWith(
       expect.objectContaining({
         update: expect.objectContaining({
-          tokensRemaining: 35,
-          lastResetDate: new Date('2026-03-09T00:00:00.000Z'),
+          tokensRemaining: 7,
+          lastResetDate: new Date('2026-03-18T00:00:00.000Z'),
         }),
       })
     );
     expect(result).toEqual({
-      tokensRemaining: 35,
-      lastResetDate: new Date('2026-03-09T00:00:00.000Z'),
+      tokensRemaining: 7,
+      lastResetDate: new Date('2026-03-18T00:00:00.000Z'),
     });
   });
 
-  it('normalizes same-week allowance records without crediting twice', async () => {
-    vi.setSystemTime(new Date('2026-03-11T12:00:00.000Z'));
+  it('adds one token per missed day within the same week', async () => {
+    vi.setSystemTime(new Date('2026-03-12T12:00:00.000Z'));
 
     queryRawMock
-      .mockResolvedValueOnce([{ tokenBalance: 19 }])
+      .mockResolvedValueOnce([{ tokenBalance: 6 }])
       .mockResolvedValueOnce([
         {
           id: 'allowance_1',
-          tokensRemaining: 17,
+          tokensRemaining: 6,
+          lastResetDate: new Date('2026-03-10T00:00:00.000Z'),
+        },
+      ]);
+    creditMock.mockResolvedValue({ transactionId: 'tx_credit', newBalance: 8 });
+    tokenAllowanceUpsertMock.mockResolvedValue({});
+
+    const result = await TokenAllowanceService.getOrCreateStatus('user_1');
+
+    expect(creditMock).toHaveBeenCalledWith(
+      {
+        userId: 'user_1',
+        amount: 2,
+        type: 'DAILY_ALLOWANCE',
+        description: 'Daily token allowance',
+      },
+      expect.anything()
+    );
+    expect(tokenAllowanceUpsertMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        update: expect.objectContaining({
+          tokensRemaining: 8,
+          lastResetDate: new Date('2026-03-12T00:00:00.000Z'),
+        }),
+      })
+    );
+    expect(result).toEqual({
+      tokensRemaining: 8,
+      lastResetDate: new Date('2026-03-12T00:00:00.000Z'),
+    });
+  });
+
+  it('normalizes same-day allowance records without crediting twice', async () => {
+    vi.setSystemTime(new Date('2026-03-11T12:00:00.000Z'));
+
+    queryRawMock
+      .mockResolvedValueOnce([{ tokenBalance: 9 }])
+      .mockResolvedValueOnce([
+        {
+          id: 'allowance_1',
+          tokensRemaining: 7,
           lastResetDate: new Date('2026-03-11T08:30:00.000Z'),
         },
       ]);
@@ -132,14 +208,14 @@ describe('TokenAllowanceService', () => {
     expect(tokenAllowanceUpsertMock).toHaveBeenCalledWith(
       expect.objectContaining({
         update: expect.objectContaining({
-          tokensRemaining: 19,
-          lastResetDate: new Date('2026-03-09T00:00:00.000Z'),
+          tokensRemaining: 9,
+          lastResetDate: new Date('2026-03-11T00:00:00.000Z'),
         }),
       })
     );
     expect(result).toEqual({
-      tokensRemaining: 19,
-      lastResetDate: new Date('2026-03-09T00:00:00.000Z'),
+      tokensRemaining: 9,
+      lastResetDate: new Date('2026-03-11T00:00:00.000Z'),
     });
   });
 });

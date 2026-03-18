@@ -61,7 +61,15 @@ vi.mock('./ToastContext', () => ({
 }));
 
 function TestHarness() {
-  const { addSelection, toggleAccumulator, submitSlip, selections, totalCost } = useBetSlip();
+  const {
+    addSelection,
+    toggleAccumulator,
+    submitSlip,
+    selections,
+    totalCost,
+    setSingleStake,
+    setAccumulatorStake,
+  } = useBetSlip();
 
   return (
     <div>
@@ -93,6 +101,12 @@ function TestHarness() {
       </button>
       <button type="button" onClick={toggleAccumulator}>
         Toggle Accumulator
+      </button>
+      <button type="button" onClick={() => setSingleStake(5)}>
+        Set Singles Stake
+      </button>
+      <button type="button" onClick={() => setAccumulatorStake(5)}>
+        Set Accumulator Stake
       </button>
       <button
         type="button"
@@ -136,7 +150,9 @@ describe('BetSlipContext submit flow', () => {
 
     const user = userEvent.setup();
     await seedSlipWithTwoSelections(user);
+    await user.click(screen.getByRole('button', { name: 'Set Singles Stake' }));
     await user.click(screen.getByRole('button', { name: 'Toggle Accumulator' }));
+    await user.click(screen.getByRole('button', { name: 'Set Accumulator Stake' }));
     await user.click(screen.getByRole('button', { name: 'Submit Slip' }));
 
     await waitFor(() => {
@@ -176,7 +192,9 @@ describe('BetSlipContext submit flow', () => {
 
     const user = userEvent.setup();
     await seedSlipWithTwoSelections(user);
+    await user.click(screen.getByRole('button', { name: 'Set Singles Stake' }));
     await user.click(screen.getByRole('button', { name: 'Toggle Accumulator' }));
+    await user.click(screen.getByRole('button', { name: 'Set Accumulator Stake' }));
     await user.click(screen.getByRole('button', { name: 'Submit Slip' }));
 
     await waitFor(() => {
@@ -202,7 +220,9 @@ describe('BetSlipContext submit flow', () => {
 
     const user = userEvent.setup();
     await seedSlipWithTwoSelections(user);
+    await user.click(screen.getByRole('button', { name: 'Set Singles Stake' }));
     await user.click(screen.getByRole('button', { name: 'Toggle Accumulator' }));
+    await user.click(screen.getByRole('button', { name: 'Set Accumulator Stake' }));
 
     expect(screen.getByTestId('total-cost')).toHaveTextContent('15');
 
@@ -227,6 +247,7 @@ describe('BetSlipContext submit flow', () => {
     const user = userEvent.setup();
     await user.click(screen.getByRole('button', { name: 'Add Home' }));
     await user.click(screen.getByRole('button', { name: 'Add Event 1 Away' }));
+    await user.click(screen.getByRole('button', { name: 'Set Singles Stake' }));
     await user.click(screen.getByRole('button', { name: 'Toggle Accumulator' }));
 
     expect(screen.getByTestId('total-cost')).toHaveTextContent('10');
@@ -242,6 +263,24 @@ describe('BetSlipContext submit flow', () => {
       'Accumulator selections must be from different events. Singles will still be placed.'
     );
     expect(toastSuccessMock).toHaveBeenCalledWith('Placed 2 bets successfully');
+  });
+
+  it('requires the user to enter stakes before submitting', async () => {
+    render(
+      <BetSlipProvider>
+        <TestHarness />
+      </BetSlipProvider>
+    );
+
+    const user = userEvent.setup();
+    await seedSlipWithTwoSelections(user);
+
+    expect(screen.getByTestId('total-cost')).toHaveTextContent('0');
+
+    await user.click(screen.getByRole('button', { name: 'Submit Slip' }));
+
+    expect(toastErrorMock).toHaveBeenCalledWith('Enter a stake for your singles');
+    expect(placePredictionMock).not.toHaveBeenCalled();
   });
 
   it('persists selections when provider remounts', async () => {

@@ -3,7 +3,7 @@ import { z } from 'zod';
 import rateLimit from 'express-rate-limit';
 import { AuthService } from '../services/auth.js';
 import { LedgerService } from '../services/ledger.js';
-import { TokenAllowanceService } from '../services/tokenAllowance.js';
+import { TokenAllowanceService, getNextAllowanceRefillAt } from '../services/tokenAllowance.js';
 import { PointsLedgerService } from '../services/pointsLedger.js';
 import { PredictionService } from '../services/predictions.js';
 import { LeaderboardService } from '../services/leaderboard.js';
@@ -11,7 +11,6 @@ import { AchievementService } from '../services/achievements.js';
 import { requireAuth, validateBody, validateQuery, getAuthUser, emailSchema, passwordSchema } from '../middleware/index.js';
 import { asyncHandler, sendSuccess } from '../utils/index.js';
 import { config } from '../config/index.js';
-import { getNextISOWeekStart } from '../utils/week.js';
 
 const router = Router();
 
@@ -329,10 +328,8 @@ router.get(
       .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
       .slice(0, 5);
 
-    const lastResetDate = allowanceStatus.lastResetDate;
-    const nextResetAt = getNextISOWeekStart(lastResetDate);
-    const msUntilReset = Math.max(0, nextResetAt.getTime() - Date.now());
-    const daysUntilReset = Math.ceil(msUntilReset / (24 * 60 * 60 * 1000));
+    const lastRefillAt = allowanceStatus.lastResetDate;
+    const nextRefillAt = getNextAllowanceRefillAt(new Date());
 
     sendSuccess(res, {
       predictionStats: {
@@ -343,9 +340,11 @@ router.get(
       recentActivity,
       allowance: {
         tokensRemaining: allowanceStatus.tokensRemaining,
-        lastResetDate,
-        nextResetAt,
-        daysUntilReset,
+        lastRefillAt,
+        nextRefillAt,
+        weeklyStartTokens: config.tokens.weeklyStart,
+        dailyAllowance: config.tokens.dailyAllowance,
+        maxStack: config.tokens.maxAllowance,
       },
       achievementProgress: achievementProgress.next,
     });

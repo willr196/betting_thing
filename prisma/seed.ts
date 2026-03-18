@@ -2,6 +2,24 @@ import { PrismaClient } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 
 const prisma = new PrismaClient();
+const MS_IN_DAY = 24 * 60 * 60 * 1000;
+
+function getStartOfISOWeek(date: Date): Date {
+  const day = date.getUTCDay() || 7;
+  const monday = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+  monday.setUTCDate(monday.getUTCDate() - day + 1);
+  monday.setUTCHours(0, 0, 0, 0);
+  return monday;
+}
+
+function getSeedAllowance(date: Date): { amount: number; lastResetDate: Date } {
+  const weekStart = getStartOfISOWeek(date);
+  const elapsedDays = Math.max(0, Math.floor((date.getTime() - weekStart.getTime()) / MS_IN_DAY));
+  return {
+    amount: Math.min(11, 5 + elapsedDays),
+    lastResetDate: weekStart,
+  };
+}
 
 async function main() {
   console.log('🌱 Seeding database...\n');
@@ -23,7 +41,9 @@ async function main() {
   console.log('✅ Admin user created:', admin.email);
 
   const today = new Date();
-  const todayUtc = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()));
+  const allowanceSeed = getSeedAllowance(
+    new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()))
+  );
 
   await prisma.tokenTransaction.upsert({
     where: { id: 'admin-daily-allowance' },
@@ -31,16 +51,16 @@ async function main() {
     create: {
       id: 'admin-daily-allowance',
       userId: admin.id,
-      amount: 5,
-      balanceAfter: 5,
+      amount: allowanceSeed.amount,
+      balanceAfter: allowanceSeed.amount,
       type: 'DAILY_ALLOWANCE',
-      description: 'Daily token allowance',
+      description: 'Weekly token allowance',
     },
   });
 
   await prisma.user.update({
     where: { id: admin.id },
-    data: { tokenBalance: 5 },
+    data: { tokenBalance: allowanceSeed.amount },
   });
 
   await prisma.tokenAllowance.upsert({
@@ -49,8 +69,8 @@ async function main() {
     create: {
       id: 'admin-token-allowance',
       userId: admin.id,
-      tokensRemaining: 5,
-      lastResetDate: todayUtc,
+      tokensRemaining: allowanceSeed.amount,
+      lastResetDate: allowanceSeed.lastResetDate,
     },
   });
 
@@ -76,16 +96,16 @@ async function main() {
     create: {
       id: 'test-daily-allowance',
       userId: testUser.id,
-      amount: 5,
-      balanceAfter: 5,
+      amount: allowanceSeed.amount,
+      balanceAfter: allowanceSeed.amount,
       type: 'DAILY_ALLOWANCE',
-      description: 'Daily token allowance',
+      description: 'Weekly token allowance',
     },
   });
 
   await prisma.user.update({
     where: { id: testUser.id },
-    data: { tokenBalance: 5 },
+    data: { tokenBalance: allowanceSeed.amount },
   });
 
   await prisma.tokenAllowance.upsert({
@@ -94,8 +114,8 @@ async function main() {
     create: {
       id: 'test-token-allowance',
       userId: testUser.id,
-      tokensRemaining: 5,
-      lastResetDate: todayUtc,
+      tokensRemaining: allowanceSeed.amount,
+      lastResetDate: allowanceSeed.lastResetDate,
     },
   });
 

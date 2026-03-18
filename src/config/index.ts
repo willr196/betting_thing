@@ -74,10 +74,11 @@ const envSchema = z.object({
   
   // Token Economy
   SIGNUP_BONUS_TOKENS: z.coerce.number().min(0).default(0),
-  DAILY_ALLOWANCE_TOKENS: z.coerce.number().min(1).default(5),
-  MAX_ALLOWANCE_TOKENS: z.coerce.number().min(1).default(35),
+  WEEKLY_START_TOKENS: z.coerce.number().min(1).default(5),
+  DAILY_ALLOWANCE_TOKENS: z.coerce.number().min(1).default(1),
+  MAX_ALLOWANCE_TOKENS: z.coerce.number().min(1).default(11),
   MIN_STAKE_AMOUNT: z.coerce.number().min(1).default(1),
-  MAX_STAKE_AMOUNT: z.coerce.number().min(1).default(35),
+  MAX_STAKE_AMOUNT: z.coerce.number().min(1).default(11),
   
   // Rate Limiting
   RATE_LIMIT_MAX: z.coerce.number().default(100),
@@ -172,6 +173,7 @@ export const config = {
   // Token Economy Rules
   tokens: {
     signupBonus: env.SIGNUP_BONUS_TOKENS,
+    weeklyStart: env.WEEKLY_START_TOKENS,
     dailyAllowance: env.DAILY_ALLOWANCE_TOKENS,
     maxAllowance: env.MAX_ALLOWANCE_TOKENS,
     minStake: env.MIN_STAKE_AMOUNT,

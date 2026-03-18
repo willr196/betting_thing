@@ -16,6 +16,8 @@ import {
   RewardsPage,
   TransactionsPage,
   WalletPage,
+  PromotionsPage,
+  MinigamesPage,
   LeaguesPage,
   LeagueDetailPage,
   LeagueSettingsPage,
@@ -145,6 +147,8 @@ function AppRoutes() {
         <Route path="leagues/:id" element={<ErrorBoundary><LeagueDetailPage /></ErrorBoundary>} />
         <Route path="leagues/:id/settings" element={<ErrorBoundary><LeagueSettingsPage /></ErrorBoundary>} />
         <Route path="rewards" element={<ErrorBoundary><RewardsPage /></ErrorBoundary>} />
+        <Route path="promotions" element={<ErrorBoundary><PromotionsPage /></ErrorBoundary>} />
+        <Route path="minigames" element={<ErrorBoundary><MinigamesPage /></ErrorBoundary>} />
         <Route path="transactions" element={<ErrorBoundary><TransactionsPage /></ErrorBoundary>} />
         <Route path="wallet" element={<ErrorBoundary><WalletPage /></ErrorBoundary>} />
       </Route>

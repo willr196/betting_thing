@@ -7,13 +7,11 @@ import {
   type ReactNode,
 } from 'react';
 import { api, ApiError } from '../lib/api';
+import { MAX_STAKE, MIN_STAKE } from '../lib/tokenRules';
 import { useAuth } from './AuthContext';
 import { useToast } from './ToastContext';
 
-const MIN_STAKE = 1;
-const MAX_STAKE = 35;
-const DEFAULT_STAKE = 5;
-const BET_SLIP_STORAGE_PREFIX = 'prediction-platform:bet-slip:v1';
+const BET_SLIP_STORAGE_PREFIX = 'prediction-platform:bet-slip:v2';
 
 export interface BetSlipSelection {
   id: string;
@@ -29,8 +27,8 @@ interface BetSlipContextType {
   accumulatorEnabled: boolean;
   canPlaceAccumulator: boolean;
   hasDuplicateEventSelections: boolean;
-  singleStake: number;
-  accumulatorStake: number;
+  singleStake: number | null;
+  accumulatorStake: number | null;
   combinedOdds: number;
   totalCost: number;
   isSubmitting: boolean;
@@ -62,8 +60,8 @@ export function BetSlipProvider({ children }: { children: ReactNode }) {
 
   const [selections, setSelections] = useState<BetSlipSelection[]>([]);
   const [accumulatorEnabled, setAccumulatorEnabled] = useState(false);
-  const [singleStake, setSingleStakeState] = useState(DEFAULT_STAKE);
-  const [accumulatorStake, setAccumulatorStakeState] = useState(DEFAULT_STAKE);
+  const [singleStake, setSingleStakeState] = useState<number | null>(null);
+  const [accumulatorStake, setAccumulatorStakeState] = useState<number | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [hydratedStorageKey, setHydratedStorageKey] = useState<string | null>(null);
 
@@ -115,8 +113,10 @@ export function BetSlipProvider({ children }: { children: ReactNode }) {
   );
 
   const totalCost = useMemo(() => {
-    const singlesCost = selections.filter((selection) => selection.placeSingle).length * singleStake;
-    const accumulatorCost = accumulatorEnabled && canPlaceAccumulator ? accumulatorStake : 0;
+    const singlesCost =
+      selections.filter((selection) => selection.placeSingle).length * (singleStake ?? 0);
+    const accumulatorCost =
+      accumulatorEnabled && canPlaceAccumulator ? (accumulatorStake ?? 0) : 0;
     return singlesCost + accumulatorCost;
   }, [accumulatorEnabled, accumulatorStake, canPlaceAccumulator, selections, singleStake]);
 
@@ -206,17 +206,30 @@ export function BetSlipProvider({ children }: { children: ReactNode }) {
       return;
     }
 
+    if (singles.length > 0 && singleStake === null) {
+      showError('Enter a stake for your singles');
+      return;
+    }
+
+    if (shouldPlaceAccumulator && accumulatorStake === null) {
+      showError('Enter a stake for your accumulator');
+      return;
+    }
+
     if (totalCost > user.tokenBalance) {
       showError('Not enough tokens for this bet slip');
       return;
     }
 
+    const resolvedSingleStake = singleStake;
+    const resolvedAccumulatorStake = accumulatorStake;
     const requests: Array<{ label: string; run: () => Promise<unknown> }> = [];
 
     for (const selection of singles) {
       requests.push({
         label: `Single: ${selection.eventTitle} - ${selection.predictedOutcome}`,
-        run: () => api.placePrediction(selection.eventId, selection.predictedOutcome, singleStake),
+        run: () =>
+          api.placePrediction(selection.eventId, selection.predictedOutcome, resolvedSingleStake!),
       });
     }
 
@@ -229,7 +242,7 @@ export function BetSlipProvider({ children }: { children: ReactNode }) {
               eventId: selection.eventId,
               predictedOutcome: selection.predictedOutcome,
             })),
-            accumulatorStake
+            resolvedAccumulatorStake!
           ),
       });
     }
@@ -313,12 +326,17 @@ export function useBetSlip(): BetSlipContextType {
   return context;
 }
 
-function clampStake(value: number): number {
+function clampStake(value: number): number | null {
   if (!Number.isFinite(value)) {
-    return DEFAULT_STAKE;
+    return null;
   }
 
-  return Math.min(MAX_STAKE, Math.max(MIN_STAKE, Math.floor(value)));
+  const normalized = Math.floor(value);
+  if (normalized < MIN_STAKE) {
+    return null;
+  }
+
+  return Math.min(MAX_STAKE, normalized);
 }
 
 function selectionHasDuplicateEvents(selections: BetSlipSelection[]): boolean {
@@ -390,16 +408,16 @@ function getStorage(): Storage | null {
 interface PersistedState {
   selections: BetSlipSelection[];
   accumulatorEnabled: boolean;
-  singleStake: number;
-  accumulatorStake: number;
+  singleStake: number | null;
+  accumulatorStake: number | null;
 }
 
 function createDefaultPersistedState(): PersistedState {
   return {
     selections: [],
     accumulatorEnabled: false,
-    singleStake: DEFAULT_STAKE,
-    accumulatorStake: DEFAULT_STAKE,
+    singleStake: null,
+    accumulatorStake: null,
   };
 }
 
@@ -415,12 +433,12 @@ function normalizePersistedState(value: unknown): PersistedState {
     .filter((selection): selection is BetSlipSelection => selection !== null);
 
   const accumulatorEnabled = stateRecord.accumulatorEnabled === true;
-  const singleStake = clampStake(typeof stateRecord.singleStake === 'number'
-    ? stateRecord.singleStake
-    : DEFAULT_STAKE);
-  const accumulatorStake = clampStake(typeof stateRecord.accumulatorStake === 'number'
-    ? stateRecord.accumulatorStake
-    : DEFAULT_STAKE);
+  const singleStake = clampStake(
+    typeof stateRecord.singleStake === 'number' ? stateRecord.singleStake : Number.NaN
+  );
+  const accumulatorStake = clampStake(
+    typeof stateRecord.accumulatorStake === 'number' ? stateRecord.accumulatorStake : Number.NaN
+  );
 
   return {
     selections,

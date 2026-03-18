@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { z } from 'zod';
+import { config } from '../config/index.js';
 import { PredictionService } from '../services/predictions.js';
 import { AchievementService } from '../services/achievements.js';
 import { requireAuth, validateBody, validateQuery, validateParams, getAuthUser, idParamSchema, positiveIntSchema } from '../middleware/index.js';
@@ -14,7 +15,10 @@ const router = Router();
 const placePredictionSchema = z.object({
   eventId: z.string().min(1, 'Event ID is required'),
   predictedOutcome: z.string().min(1, 'Predicted outcome is required'),
-  stakeAmount: positiveIntSchema,
+  stakeAmount: positiveIntSchema.max(
+    config.tokens.maxStake,
+    `Stake must be ${config.tokens.maxStake} tokens or less`
+  ),
 });
 
 const listPredictionsSchema = z.object({

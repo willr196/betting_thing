@@ -126,10 +126,11 @@
 | `NODE_ENV` | No | `development` |
 | `FRONTEND_URL` | No | No |
 | `SIGNUP_BONUS_TOKENS` | No | `0` |
-| `DAILY_ALLOWANCE_TOKENS` | No | `5` |
-| `MAX_ALLOWANCE_TOKENS` | No | `35` |
+| `WEEKLY_START_TOKENS` | No | `5` |
+| `DAILY_ALLOWANCE_TOKENS` | No | `1` |
+| `MAX_ALLOWANCE_TOKENS` | No | `11` |
 | `MIN_STAKE_AMOUNT` | No | `1` |
-| `MAX_STAKE_AMOUNT` | No | `35` |
+| `MAX_STAKE_AMOUNT` | No | `11` |
 | `RATE_LIMIT_MAX` | No | `100` |
 | `RATE_LIMIT_WINDOW_MINUTES` | No | `15` |
 | `THE_ODDS_API_KEY` | Yes | No |

@@ -8,6 +8,8 @@ export { LeaderboardPage } from './LeaderboardPage';
 export { RewardsPage } from './RewardsPage';
 export { TransactionsPage } from './TransactionsPage';
 export { WalletPage } from './WalletPage';
+export { PromotionsPage } from './PromotionsPage';
+export { MinigamesPage } from './MinigamesPage';
 export { LeaguesPage } from './LeaguesPage';
 export { LeagueDetailPage } from './LeagueDetailPage';
 export { LeagueSettingsPage } from './LeagueSettingsPage';

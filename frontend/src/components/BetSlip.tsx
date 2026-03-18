@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useBetSlip } from '../context/BetSlipContext';
-import { formatTokens } from '../lib/utils';
+import { formatGBP, formatTokens } from '../lib/utils';
+import { MAX_STAKE, TOKEN_VALUE_GBP } from '../lib/tokenRules';
 import { Button } from './ui';
 
 export function BetSlip() {
@@ -46,8 +47,16 @@ export function BetSlip() {
   const hasSinglesSelected = singlesCount > 0;
   const canToggleAccumulator = selections.length >= 2;
   const accumulatorActive = accumulatorEnabled && canPlaceAccumulator;
-  const accumulatorPotentialPayout = Math.floor(accumulatorStake * combinedOdds);
-  const canSubmit = totalCost > 0 && totalCost <= balance && !isSubmitting;
+  const missingSingleStake = hasSinglesSelected && singleStake === null;
+  const missingAccumulatorStake = accumulatorActive && accumulatorStake === null;
+  const accumulatorPotentialPayout =
+    accumulatorStake === null ? 0 : Math.floor(accumulatorStake * combinedOdds);
+  const canSubmit =
+    totalCost > 0 &&
+    totalCost <= balance &&
+    !isSubmitting &&
+    !missingSingleStake &&
+    !missingAccumulatorStake;
 
   return (
     <>
@@ -139,11 +148,15 @@ export function BetSlip() {
                     <input
                       type="number"
                       min={1}
-                      max={35}
-                      value={singleStake}
+                      max={MAX_STAKE}
+                      value={singleStake ?? ''}
+                      placeholder={`Enter 1-${MAX_STAKE}`}
                       onChange={(event) => setSingleStake(event.currentTarget.valueAsNumber)}
                       className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
                     />
+                    {missingSingleStake && (
+                      <p className="mt-2 text-sm text-amber-700">Enter a stake to include singles.</p>
+                    )}
                   </div>
                 )}
 
@@ -177,36 +190,52 @@ export function BetSlip() {
                         <input
                           type="number"
                           min={1}
-                          max={35}
-                          value={accumulatorStake}
+                          max={MAX_STAKE}
+                          value={accumulatorStake ?? ''}
+                          placeholder={`Enter 1-${MAX_STAKE}`}
                           onChange={(event) => setAccumulatorStake(event.currentTarget.valueAsNumber)}
                           className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
                         />
                       </div>
-                      <p className="mt-2 text-sm text-green-700">
-                        Potential payout: {formatTokens(accumulatorPotentialPayout)} points
-                      </p>
+                      {missingAccumulatorStake ? (
+                        <p className="mt-2 text-sm text-amber-700">
+                          Enter a stake to include the accumulator.
+                        </p>
+                      ) : (
+                        <p className="mt-2 text-sm text-green-700">
+                          Potential payout: {formatTokens(accumulatorPotentialPayout)} points
+                        </p>
+                      )}
                     </>
                   )}
                 </div>
               </div>
 
               <div className="border-t border-gray-200 px-5 py-4">
+                <p className="mb-3 text-xs font-medium uppercase tracking-[0.22em] text-gray-400">
+                  1 token = £1
+                </p>
                 <div className="mb-3 flex items-center justify-between text-sm">
                   <span className="text-gray-600">Singles selected</span>
                   <span className="font-medium text-gray-900">{singlesCount}</span>
                 </div>
                 <div className="mb-3 flex items-center justify-between text-sm">
                   <span className="text-gray-600">Total</span>
-                  <span className="text-base font-semibold text-gray-900">
-                    {formatTokens(totalCost)} tokens
-                  </span>
+                  <div className="text-right">
+                    <p className="text-base font-semibold text-gray-900">
+                      {formatTokens(totalCost)} tokens
+                    </p>
+                    <p className="text-xs text-gray-500">{formatGBP(totalCost * TOKEN_VALUE_GBP)}</p>
+                  </div>
                 </div>
                 <div className="mb-4 flex items-center justify-between text-sm">
                   <span className="text-gray-600">Your balance</span>
-                  <span className="font-medium text-gray-900">
-                    {formatTokens(balance)} tokens
-                  </span>
+                  <div className="text-right">
+                    <p className="font-medium text-gray-900">
+                      {formatTokens(balance)} tokens
+                    </p>
+                    <p className="text-xs text-gray-500">{formatGBP(balance * TOKEN_VALUE_GBP)}</p>
+                  </div>
                 </div>
 
                 {!canSubmit && totalCost > balance && (

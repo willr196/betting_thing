@@ -4,6 +4,7 @@ import { useToast } from '../context/ToastContext';
 import {
   formatTokens,
   formatPoints,
+  formatGBP,
   formatDate,
   formatRelativeTime,
   getTransactionColor,
@@ -17,6 +18,7 @@ import type {
   DashboardStats,
   Achievement,
 } from '../types';
+import { TOKEN_VALUE_GBP } from '../lib/tokenRules';
 
 export function WalletPage() {
   const { error: showError } = useToast();
@@ -150,15 +152,16 @@ export function WalletPage() {
   );
 
   const allowanceWindow = dashboard?.allowance ?? null;
-  const daysUntilResetLabel =
-    allowanceWindow === null
-      ? 'Loading...'
-      : allowanceWindow.daysUntilReset === 0
-        ? 'today'
-        : `${allowanceWindow.daysUntilReset} day${allowanceWindow.daysUntilReset === 1 ? '' : 's'}`;
   const settledPredictionCount = dashboard
     ? dashboard.predictionStats.won + dashboard.predictionStats.lost
     : 0;
+  const tokenValueLabel = formatGBP(tokenBalance * TOKEN_VALUE_GBP);
+  const nextRefillRelativeLabel =
+    allowanceWindow === null ? 'Loading refill window' : formatRelativeTime(allowanceWindow.nextRefillAt);
+  const stackRuleLabel =
+    allowanceWindow === null
+      ? 'Loading stack rule'
+      : `${allowanceWindow.weeklyStartTokens} to start · +${allowanceWindow.dailyAllowance} daily · ${allowanceWindow.maxStack} max`;
 
   return (
     <div className="space-y-6">
@@ -169,22 +172,29 @@ export function WalletPage() {
           <div>
             <p className="text-xs uppercase tracking-[0.34em] text-white/60">Wallet</p>
             <h1 className="mt-3 max-w-2xl text-3xl font-semibold leading-tight sm:text-4xl">
-              Weekly tokens, cleaner stats, and a sharper balance view.
+              Weekly starters, daily top-ups, and clear token value.
             </h1>
             <p className="mt-3 max-w-2xl text-sm text-white/78 sm:text-base">
-              Your free-play tokens now refresh on the weekly cycle after Sunday, and win rate is
-              based only on settled wins and losses.
+              Each week begins with a 5-token allowance, then 1 token lands each day after that,
+              up to the weekly cap. Every token is worth £1 in play, and win rate is based only on
+              settled wins and losses.
             </p>
             <div className="mt-5 flex flex-wrap gap-2">
               <Badge className="border border-white/20 bg-white/10 text-white">
-                Weekly reset after Sunday
+                {allowanceWindow ? `${allowanceWindow.weeklyStartTokens} at week start` : 'Weekly start'}
               </Badge>
               <Badge className="border border-white/20 bg-white/10 text-white">
-                Settled bets only
+                {allowanceWindow ? `+${allowanceWindow.dailyAllowance} daily` : 'Daily top-up'}
+              </Badge>
+              <Badge className="border border-white/20 bg-white/10 text-white">
+                {allowanceWindow ? `${allowanceWindow.maxStack} token cap` : 'Stack cap'}
+              </Badge>
+              <Badge className="border border-white/20 bg-white/10 text-white">
+                1 token = £1
               </Badge>
               {allowanceWindow && (
                 <Badge className="border border-white/20 bg-white/10 text-white">
-                  Next refill {formatDate(allowanceWindow.nextResetAt)}
+                  Next refill {formatDate(allowanceWindow.nextRefillAt)}
                 </Badge>
               )}
             </div>
@@ -194,11 +204,7 @@ export function WalletPage() {
             <HeroBalanceCard
               label="Tokens live"
               value={formatTokens(tokenBalance)}
-              footer={
-                allowanceWindow
-                  ? `Resets in ${daysUntilResetLabel}`
-                  : 'Loading allowance window'
-              }
+              footer={allowanceWindow ? `${tokenValueLabel} in promotional play` : 'Loading token value'}
             />
             <HeroBalanceCard
               label="Points banked"
@@ -206,13 +212,13 @@ export function WalletPage() {
               footer="Earned from wins and cashouts"
             />
             <HeroBalanceCard
-              label="Token earned"
+              label="Tokens earned"
               value={`+${formatTokens(tokenStats.totalEarned)}`}
               footer="All-time credits in wallet history"
               tone="warm"
             />
             <HeroBalanceCard
-              label="Token spent"
+              label="Tokens spent"
               value={`-${formatTokens(tokenStats.totalSpent)}`}
               footer="Predictions and redemptions"
               tone="warm"
@@ -259,10 +265,10 @@ export function WalletPage() {
               <div className="mb-4 flex items-center justify-between">
                 <div>
                   <p className="text-xs uppercase tracking-[0.28em] text-gray-400">Momentum</p>
-                  <h2 className="mt-2 text-xl font-semibold text-gray-900">Weekly Token Cycle</h2>
+                  <h2 className="mt-2 text-xl font-semibold text-gray-900">Weekly Token Schedule</h2>
                 </div>
                 <div className="rounded-full border border-primary-100 bg-primary-50 px-3 py-1 text-xs font-semibold text-primary-700">
-                  Refreshes Monday 00:00 UTC
+                  Week starts Monday 00:00 UTC
                 </div>
               </div>
 
@@ -272,28 +278,30 @@ export function WalletPage() {
                   <p className="mt-2 text-3xl font-semibold text-gray-900">
                     {allowance?.tokensRemaining ?? tokenBalance}
                   </p>
-                  <p className="mt-2 text-sm text-gray-600">Spend across the full weekly window.</p>
+                  <p className="mt-2 text-sm text-gray-600">
+                    Worth {formatGBP((allowance?.tokensRemaining ?? tokenBalance) * TOKEN_VALUE_GBP)} in play.
+                  </p>
                 </div>
                 <div className="rounded-[24px] border border-amber-100 bg-amber-50/80 p-4">
-                  <p className="text-sm text-amber-800">Next refill</p>
+                  <p className="text-sm text-amber-800">Next daily top-up</p>
                   <p className="mt-2 text-lg font-semibold text-gray-900">
-                    {formatDate(dashboard.allowance.nextResetAt)}
+                    {formatDate(dashboard.allowance.nextRefillAt)}
                   </p>
-                  <p className="mt-2 text-sm text-gray-600">Refreshes in {daysUntilResetLabel}.</p>
+                  <p className="mt-2 text-sm text-gray-600">Arrives {nextRefillRelativeLabel}.</p>
                 </div>
                 <div className="rounded-[24px] border border-gray-200 bg-white/70 p-4">
-                  <p className="text-sm text-gray-500">Current cycle began</p>
+                  <p className="text-sm text-gray-500">Last allowance checkpoint</p>
                   <p className="mt-2 text-lg font-semibold text-gray-900">
-                    {formatDate(dashboard.allowance.lastResetDate)}
+                    {formatDate(dashboard.allowance.lastRefillAt)}
                   </p>
                 </div>
                 <div className="rounded-[24px] border border-gray-200 bg-white/70 p-4">
-                  <p className="text-sm text-gray-500">Allowance status</p>
+                  <p className="text-sm text-gray-500">Stack rule</p>
                   <p className="mt-2 text-lg font-semibold text-gray-900">
-                    {dashboard.allowance.daysUntilReset === 0 ? 'Refill day' : 'Live week'}
+                    {stackRuleLabel}
                   </p>
                   <p className="mt-2 text-sm text-gray-600">
-                    Free tokens refill after Sunday ends.
+                    Monday brings the starter stack, then one token arrives each day after that.
                   </p>
                 </div>
               </div>

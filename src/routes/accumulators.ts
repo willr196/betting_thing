@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { z } from 'zod';
+import { config } from '../config/index.js';
 import { AccumulatorService } from '../services/accumulators.js';
 import {
   getAuthUser,
@@ -23,7 +24,7 @@ const placeAccumulatorSchema = z.object({
     )
     .min(2)
     .max(10),
-  stakeAmount: z.coerce.number().int().min(1).max(35),
+  stakeAmount: z.coerce.number().int().min(1).max(config.tokens.maxStake),
 });
 
 const listAccumulatorsSchema = z.object({

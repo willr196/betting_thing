@@ -272,9 +272,11 @@ export interface DashboardStats {
   recentActivity: DashboardActivity[];
   allowance: {
     tokensRemaining: number;
-    lastResetDate: string;
-    nextResetAt: string;
-    daysUntilReset: number;
+    lastRefillAt: string;
+    nextRefillAt: string;
+    weeklyStartTokens: number;
+    dailyAllowance: number;
+    maxStack: number;
   };
   achievementProgress: Achievement[];
 }

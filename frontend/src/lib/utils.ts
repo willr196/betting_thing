@@ -10,6 +10,16 @@ export function formatPoints(amount: number): string {
   return new Intl.NumberFormat('en-US').format(amount);
 }
 
+export function formatGBP(amount: number): string {
+  const hasFraction = Math.abs(amount % 1) > Number.EPSILON;
+  return new Intl.NumberFormat('en-GB', {
+    style: 'currency',
+    currency: 'GBP',
+    minimumFractionDigits: hasFraction ? 2 : 0,
+    maximumFractionDigits: 2,
+  }).format(amount);
+}
+
 export function formatDate(dateString: string): string {
   const date = new Date(dateString);
   return new Intl.DateTimeFormat('en-US', {
@@ -68,7 +78,7 @@ export function getTransactionColor(amount: number): string {
 
 export function getTransactionLabel(type: string): string {
   const labels: Record<string, string> = {
-    DAILY_ALLOWANCE: 'Weekly Reset',
+    DAILY_ALLOWANCE: 'Allowance Top-up',
     SIGNUP_BONUS: 'Signup Bonus',
     PREDICTION_STAKE: 'Prediction Stake',
     PREDICTION_WIN: 'Prediction Win',

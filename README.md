@@ -4,7 +4,8 @@ A token-based prediction platform where users receive free daily tokens to make 
 
 ## Key Features
 
-- **Daily token allowance**: Users receive 5 tokens per day (stacking to 35 max)
+- **Allowance schedule**: Users start each week with 5 tokens, then receive 1 more per day up to 11
+- **Token value clarity**: Each token represents £1 of promotional play
 - **Token → Points flow**: Tokens are staked; winnings and cashouts pay in points
 - **Cashout**: Exit predictions early based on live odds
 - **Odds integration**: Live odds and event settlement via The Odds API
@@ -480,7 +481,7 @@ PointsTransaction (Points Ledger - IMMUTABLE)
 └── createdAt
 
 TokenAllowance
-├── userId, tokensRemaining, lastResetDate
+├── userId, tokensRemaining, lastResetDate (daily refill checkpoint)
 
 Event
 ├── id, title, description
@@ -516,7 +517,8 @@ Redemption
 
 ## Token & Points Rules
 
-- Users receive **5 tokens per day**, stacking up to **35**
+- Users begin each week with **5 tokens**, then receive **1 token per day** after that, up to **11**
+- Each token represents **£1** of promotional play value
 - Tokens are **consumed immediately** when placing a prediction
 - Winnings and cashouts pay out in **points**
 - Points are redeemable for rewards (no withdrawals)
@@ -558,10 +560,11 @@ See `.env.example` for all options. Key variables:
 | `JWT_SECRET` | Secret for signing JWTs | - |
 | `JWT_EXPIRES_IN` | Token expiration | 7d |
 | `PORT` | Server port | 3000 |
-| `DAILY_ALLOWANCE_TOKENS` | Daily free tokens | 5 |
-| `MAX_ALLOWANCE_TOKENS` | Max stacked tokens | 35 |
+| `WEEKLY_START_TOKENS` | Tokens granted at the start of each week | 5 |
+| `DAILY_ALLOWANCE_TOKENS` | Daily top-up after the weekly start | 1 |
+| `MAX_ALLOWANCE_TOKENS` | Max stacked tokens | 11 |
 | `MIN_STAKE_AMOUNT` | Min stake | 1 |
-| `MAX_STAKE_AMOUNT` | Max stake | 35 |
+| `MAX_STAKE_AMOUNT` | Max stake | 11 |
 | `THE_ODDS_API_KEY` | The Odds API key | - |
 | `THE_ODDS_API_REGIONS` | Regions | uk |
 | `THE_ODDS_API_MARKETS` | Markets | h2h |

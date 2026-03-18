@@ -9,8 +9,20 @@ import { getStartOfISOWeek } from '../utils/week.js';
 // TOKEN ALLOWANCE SERVICE
 // =============================================================================
 
+const MS_IN_DAY = 24 * 60 * 60 * 1000;
+
+function getAllowanceDayStart(date: Date): Date {
+  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+}
+
 function getAllowanceWeekStart(date: Date): Date {
   return getStartOfISOWeek(date);
+}
+
+export function getNextAllowanceRefillAt(date: Date = new Date()): Date {
+  const next = getAllowanceDayStart(date);
+  next.setUTCDate(next.getUTCDate() + 1);
+  return next;
 }
 
 export const TokenAllowanceService = {
@@ -18,7 +30,7 @@ export const TokenAllowanceService = {
    * Read-mostly status lookup used by internal balance checks.
    */
   async getStatus(userId: string) {
-    const weekStart = getAllowanceWeekStart(new Date());
+    const dayStart = getAllowanceDayStart(new Date());
     const [allowance, user] = await Promise.all([
       prisma.tokenAllowance.findUnique({
         where: { userId },
@@ -39,7 +51,7 @@ export const TokenAllowanceService = {
         data: {
           userId,
           tokensRemaining: user.tokenBalance,
-          lastResetDate: weekStart,
+          lastResetDate: dayStart,
         },
         select: { tokensRemaining: true, lastResetDate: true },
       });
@@ -137,7 +149,7 @@ export const TokenAllowanceService = {
         create: {
           userId,
           tokensRemaining: user.tokenBalance,
-          lastResetDate: getAllowanceWeekStart(new Date()),
+          lastResetDate: getAllowanceDayStart(new Date()),
         },
       });
 
@@ -153,63 +165,72 @@ export const TokenAllowanceService = {
 };
 
 async function ensureAllowance(userId: string, tx: Prisma.TransactionClient) {
-  const currentWeekStart = getAllowanceWeekStart(new Date());
+  const currentDayStart = getAllowanceDayStart(new Date());
+  const currentWeekStart = getAllowanceWeekStart(currentDayStart);
   const currentBalance = await lockUserBalanceForUpdate(tx, userId);
   const allowance = await lockAllowanceForUser(tx, userId);
 
   if (!allowance) {
-    const credit = await LedgerService.credit(
-      {
-        userId,
-        amount: config.tokens.maxAllowance,
-        type: 'DAILY_ALLOWANCE',
-        description: 'Weekly token reset',
-      },
-      tx
+    const initialEntitlement = calculateCurrentWeekEntitlement(currentDayStart);
+    const initialCredit = Math.max(0, initialEntitlement - currentBalance);
+    const newBalance = await creditAllowanceIfNeeded(
+      tx,
+      userId,
+      currentBalance,
+      initialCredit,
+      'Weekly token allowance'
     );
 
     await tx.tokenAllowance.create({
       data: {
         userId,
-        tokensRemaining: credit.newBalance,
-        lastResetDate: currentWeekStart,
+        tokensRemaining: newBalance,
+        lastResetDate: currentDayStart,
       },
     });
 
-    return { tokensRemaining: credit.newBalance, lastResetDate: currentWeekStart };
+    return { tokensRemaining: newBalance, lastResetDate: currentDayStart };
   }
 
-  const normalizedLastResetDate = getAllowanceWeekStart(allowance.lastResetDate);
-  const needsWeeklyReset = normalizedLastResetDate.getTime() < currentWeekStart.getTime();
+  const normalizedLastResetDate = getAllowanceDayStart(allowance.lastResetDate);
+  const lastWeekStart = getAllowanceWeekStart(normalizedLastResetDate);
+  const elapsedDays = getElapsedDays(normalizedLastResetDate, currentDayStart);
 
-  if (needsWeeklyReset) {
-    const tokensToAdd = calculateWeeklyRefill(currentBalance);
-
-    if (tokensToAdd > 0) {
-      const credit = await LedgerService.credit(
-        {
-          userId,
-          amount: tokensToAdd,
-          type: 'DAILY_ALLOWANCE',
-          description: 'Weekly token reset',
-        },
-        tx
-      );
-
-      await upsertAllowance(tx, userId, {
-        tokensRemaining: credit.newBalance,
-        lastResetDate: currentWeekStart,
-      });
-
-      return { tokensRemaining: credit.newBalance, lastResetDate: currentWeekStart };
-    }
+  if (lastWeekStart.getTime() < currentWeekStart.getTime()) {
+    const weeklyEntitlement = calculateCurrentWeekEntitlement(currentDayStart);
+    const tokensToAdd = Math.max(0, weeklyEntitlement - currentBalance);
+    const newBalance = await creditAllowanceIfNeeded(
+      tx,
+      userId,
+      currentBalance,
+      tokensToAdd,
+      'Weekly token allowance'
+    );
 
     await upsertAllowance(tx, userId, {
-      tokensRemaining: currentBalance,
-      lastResetDate: currentWeekStart,
+      tokensRemaining: newBalance,
+      lastResetDate: currentDayStart,
     });
 
-    return { tokensRemaining: currentBalance, lastResetDate: currentWeekStart };
+    return { tokensRemaining: newBalance, lastResetDate: currentDayStart };
+  }
+
+  if (elapsedDays > 0) {
+    const tokensToAdd = calculateDailyAccrual(elapsedDays, currentBalance);
+    const newBalance = await creditAllowanceIfNeeded(
+      tx,
+      userId,
+      currentBalance,
+      tokensToAdd,
+      'Daily token allowance'
+    );
+
+    await upsertAllowance(tx, userId, {
+      tokensRemaining: newBalance,
+      lastResetDate: currentDayStart,
+    });
+
+    return { tokensRemaining: newBalance, lastResetDate: currentDayStart };
   }
 
   if (
@@ -241,8 +262,50 @@ async function upsertAllowance(
   });
 }
 
-function calculateWeeklyRefill(tokensRemaining: number): number {
-  return Math.max(0, config.tokens.maxAllowance - tokensRemaining);
+function calculateDailyAccrual(elapsedDays: number, tokensRemaining: number): number {
+  if (elapsedDays <= 0) {
+    return 0;
+  }
+
+  const availableHeadroom = Math.max(0, config.tokens.maxAllowance - tokensRemaining);
+  return Math.min(availableHeadroom, elapsedDays * config.tokens.dailyAllowance);
+}
+
+function calculateCurrentWeekEntitlement(currentDayStart: Date): number {
+  const weekStart = getAllowanceWeekStart(currentDayStart);
+  const elapsedDaysInWeek = getElapsedDays(weekStart, currentDayStart);
+  return Math.min(
+    config.tokens.maxAllowance,
+    config.tokens.weeklyStart + elapsedDaysInWeek * config.tokens.dailyAllowance
+  );
+}
+
+function getElapsedDays(previousDayStart: Date, currentDayStart: Date): number {
+  return Math.max(0, Math.floor((currentDayStart.getTime() - previousDayStart.getTime()) / MS_IN_DAY));
+}
+
+async function creditAllowanceIfNeeded(
+  tx: Prisma.TransactionClient,
+  userId: string,
+  currentBalance: number,
+  tokensToAdd: number,
+  description: string
+): Promise<number> {
+  if (tokensToAdd <= 0) {
+    return currentBalance;
+  }
+
+  const credit = await LedgerService.credit(
+    {
+      userId,
+      amount: tokensToAdd,
+      type: 'DAILY_ALLOWANCE',
+      description,
+    },
+    tx
+  );
+
+  return credit.newBalance;
 }
 
 async function lockAllowanceForUser(

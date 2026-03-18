@@ -3,10 +3,11 @@ import { useBetSlip } from '../context/BetSlipContext';
 import { useToast } from '../context/ToastContext';
 import { api } from '../lib/api';
 import { formatDate, formatRelativeTime } from '../lib/utils';
-import { Badge, Card, EmptyState, InlineError } from '../components/ui';
+import { Badge, Button, Card, EmptyState, InlineError } from '../components/ui';
 import type { Event } from '../types';
 
 type FootballOutcomeType = 'HOME' | 'DRAW' | 'AWAY';
+const CLEARED_COMPLETED_GAMES_STORAGE_KEY = 'prediction-platform:football:cleared-completed:v1';
 
 interface FootballOutcomeOption {
   type: FootballOutcomeType;
@@ -20,12 +21,20 @@ export function FootballPage() {
   const { success: showSuccess } = useToast();
 
   const [events, setEvents] = useState<Event[]>([]);
+  const [completedEvents, setCompletedEvents] = useState<Event[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
+  const [clearedCompletedEventIds, setClearedCompletedEventIds] = useState<Set<string>>(
+    () => loadClearedCompletedEventIds()
+  );
 
   useEffect(() => {
     void loadFootballEvents();
   }, []);
+
+  useEffect(() => {
+    persistClearedCompletedEventIds(clearedCompletedEventIds);
+  }, [clearedCompletedEventIds]);
 
   const selectedOutcomeByEventId = useMemo(() => {
     const map = new Map<string, string>();
@@ -35,18 +44,36 @@ export function FootballPage() {
     return map;
   }, [selections]);
 
+  const visibleCompletedEvents = useMemo(
+    () => completedEvents.filter((event) => !clearedCompletedEventIds.has(event.id)),
+    [clearedCompletedEventIds, completedEvents]
+  );
+
   const loadFootballEvents = async () => {
     setIsLoading(true);
     setError('');
 
     try {
-      const data = await api.getEvents({
-        status: 'OPEN',
-        upcoming: true,
-        sportKeyPrefix: 'soccer_',
-        limit: 100,
-      });
-      setEvents(data.events);
+      const [openData, completedData] = await Promise.all([
+        api.getEvents({
+          status: 'OPEN',
+          upcoming: true,
+          sportKeyPrefix: 'soccer_',
+          limit: 100,
+        }),
+        api.getEvents({
+          status: 'SETTLED',
+          sportKeyPrefix: 'soccer_',
+          limit: 50,
+        }),
+      ]);
+      setEvents(openData.events);
+      setCompletedEvents(
+        [...completedData.events].sort(
+          (left, right) =>
+            new Date(right.startsAt).getTime() - new Date(left.startsAt).getTime()
+        )
+      );
     } catch {
       setError('Fixtures could not be loaded. Please try again.');
     } finally {
@@ -59,6 +86,31 @@ export function FootballPage() {
       replaceExistingForEvent: true,
     });
     showSuccess(`${option.label} added to your slip`);
+  };
+
+  const handleClearCompleted = () => {
+    if (visibleCompletedEvents.length === 0) {
+      return;
+    }
+
+    setClearedCompletedEventIds((previous) => {
+      const next = new Set(previous);
+      for (const event of visibleCompletedEvents) {
+        next.add(event.id);
+      }
+      return next;
+    });
+
+    showSuccess(
+      `Cleared ${visibleCompletedEvents.length} completed game${
+        visibleCompletedEvents.length === 1 ? '' : 's'
+      }`
+    );
+  };
+
+  const handleRestoreCleared = () => {
+    setClearedCompletedEventIds(new Set());
+    showSuccess('Restored completed games');
   };
 
   return (
@@ -110,27 +162,97 @@ export function FootballPage() {
         </div>
       ) : error ? (
         <InlineError message={error} onRetry={() => void loadFootballEvents()} />
-      ) : events.length === 0 ? (
+      ) : events.length === 0 &&
+        completedEvents.length === 0 &&
+        clearedCompletedEventIds.size === 0 ? (
         <EmptyState
           title="No fixtures available right now"
           description="Open football fixtures will appear here when available. Check back soon."
         />
       ) : (
-        <div className="space-y-4">
-          {events.map((event) => {
-            const options = buildFootballOutcomeOptions(event);
-            const selectedOutcome = selectedOutcomeByEventId.get(event.id) ?? null;
+        <div className="space-y-10">
+          <section>
+            <div className="mb-4 flex items-center justify-between gap-3">
+              <div>
+                <h2 className="text-lg font-semibold text-gray-900">Open fixtures</h2>
+                <p className="mt-1 text-sm text-gray-500">
+                  Available now for Home, Draw, or Away picks.
+                </p>
+              </div>
+              <Badge className="bg-emerald-100 text-emerald-700">
+                {events.length} open
+              </Badge>
+            </div>
 
-            return (
-              <FixtureCard
-                key={event.id}
-                event={event}
-                options={options}
-                selectedOutcome={selectedOutcome}
-                onSelect={(option) => handleSelect(event, option)}
-              />
-            );
-          })}
+            {events.length === 0 ? (
+              <Card className="border-dashed border-gray-200 bg-white/70">
+                <EmptyState
+                  title="No open football fixtures right now"
+                  description="Completed games will stay below until you clear them."
+                />
+              </Card>
+            ) : (
+              <div className="space-y-4">
+                {events.map((event) => {
+                  const options = buildFootballOutcomeOptions(event);
+                  const selectedOutcome = selectedOutcomeByEventId.get(event.id) ?? null;
+
+                  return (
+                    <FixtureCard
+                      key={event.id}
+                      event={event}
+                      options={options}
+                      selectedOutcome={selectedOutcome}
+                      onSelect={(option) => handleSelect(event, option)}
+                    />
+                  );
+                })}
+              </div>
+            )}
+          </section>
+
+          {(completedEvents.length > 0 || clearedCompletedEventIds.size > 0) && (
+            <section>
+              <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <h2 className="text-lg font-semibold text-gray-900">Completed games</h2>
+                  <p className="mt-1 text-sm text-gray-500">
+                    Settled football results stay here until you clear them from the page.
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {clearedCompletedEventIds.size > 0 && (
+                    <Button variant="secondary" size="sm" onClick={handleRestoreCleared}>
+                      Show cleared
+                    </Button>
+                  )}
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={handleClearCompleted}
+                    disabled={visibleCompletedEvents.length === 0}
+                  >
+                    Clear completed
+                  </Button>
+                </div>
+              </div>
+
+              {visibleCompletedEvents.length === 0 ? (
+                <Card className="border-dashed border-gray-200 bg-white/70">
+                  <EmptyState
+                    title="Completed games are cleared"
+                    description="New settled matches will appear here automatically."
+                  />
+                </Card>
+              ) : (
+                <div className="space-y-4">
+                  {visibleCompletedEvents.map((event) => (
+                    <CompletedFixtureCard key={event.id} event={event} />
+                  ))}
+                </div>
+              )}
+            </section>
+          )}
         </div>
       )}
     </div>
@@ -201,6 +323,40 @@ function FixtureCard({
             </button>
           );
         })}
+      </div>
+    </Card>
+  );
+}
+
+// =============================================================================
+// COMPLETED FIXTURE CARD
+// =============================================================================
+
+function CompletedFixtureCard({ event }: { event: Event }) {
+  return (
+    <Card className="border-gray-200/80 bg-slate-50/70">
+      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h3 className="font-semibold text-gray-900">{event.title}</h3>
+          <p className="mt-0.5 text-sm text-gray-500">{event.description ?? 'Football'}</p>
+        </div>
+        <div className="shrink-0 text-sm text-gray-400 sm:text-right">
+          <p>{formatDate(event.startsAt)}</p>
+          <p className="text-xs">Completed</p>
+        </div>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2">
+        <Badge className="bg-slate-200 text-slate-700">Settled</Badge>
+        {event.finalOutcome ? (
+          <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-700">
+            Result: {event.finalOutcome}
+          </span>
+        ) : (
+          <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-700">
+            Result unavailable
+          </span>
+        )}
       </div>
     </Card>
   );
@@ -334,4 +490,51 @@ function findOutcomeOdds(event: Event, outcome: string): number {
 
 function normalizeText(value: string): string {
   return value.trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+function loadClearedCompletedEventIds(): Set<string> {
+  const storage = getStorage();
+  if (!storage) {
+    return new Set();
+  }
+
+  try {
+    const rawValue = storage.getItem(CLEARED_COMPLETED_GAMES_STORAGE_KEY);
+    if (!rawValue) {
+      return new Set();
+    }
+
+    const parsed = JSON.parse(rawValue);
+    if (!Array.isArray(parsed)) {
+      return new Set();
+    }
+
+    return new Set(parsed.filter((value): value is string => typeof value === 'string'));
+  } catch {
+    return new Set();
+  }
+}
+
+function persistClearedCompletedEventIds(value: Set<string>): void {
+  const storage = getStorage();
+  if (!storage) {
+    return;
+  }
+
+  try {
+    storage.setItem(
+      CLEARED_COMPLETED_GAMES_STORAGE_KEY,
+      JSON.stringify(Array.from(value))
+    );
+  } catch {
+    // Ignore storage failures and keep in-memory behavior.
+  }
+}
+
+function getStorage(): Storage | null {
+  if (typeof window === 'undefined') {
+    return null;
+  }
+
+  return window.localStorage ?? null;
 }

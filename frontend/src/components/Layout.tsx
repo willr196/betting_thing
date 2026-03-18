@@ -28,7 +28,7 @@ export function Layout() {
       try {
         const result = await api.getMyLeaderboardRank('all-time');
         if (!isCancelled) {
-          setStreakCount(result.rank.currentStreak);
+          setStreakCount(result.rank?.currentStreak ?? 0);
         }
       } catch {
         if (!isCancelled) {
@@ -119,6 +119,8 @@ export function Layout() {
                     {/* Utility navigation */}
                     <NavItemSecondary to="/transactions">Activity</NavItemSecondary>
                     <NavItemSecondary to="/rewards">Rewards</NavItemSecondary>
+                    <NavItemSecondary to="/promotions">Promotions</NavItemSecondary>
+                    <NavItemSecondary to="/minigames">Minigames</NavItemSecondary>
                   </div>
                 )}
 
@@ -197,6 +199,8 @@ export function Layout() {
                   <span className="h-3 w-px bg-gray-200" />
                   <MobileNavItem to="/transactions">Activity</MobileNavItem>
                   <MobileNavItem to="/rewards">Rewards</MobileNavItem>
+                  <MobileNavItem to="/promotions">Promotions</MobileNavItem>
+                  <MobileNavItem to="/minigames">Minigames</MobileNavItem>
                   <MobileNavItem to="/wallet">Wallet</MobileNavItem>
                 </>
               ) : (
