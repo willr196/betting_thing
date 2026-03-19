@@ -1,0 +1,18 @@
+{
+  "name": "Prediction Platform",
+  "short_name": "Predictions",
+  "description": "Token-based sports prediction platform. Pick outcomes, earn points, climb the leaderboard.",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "theme_color": "#4f46e5",
+  "background_color": "#ffffff",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

@@ -10,7 +10,11 @@ export function RegisterPage() {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  
+  const [emailError, setEmailError] = useState('');
+  const [passwordError, setPasswordError] = useState('');
+  const [confirmPasswordError, setConfirmPasswordError] = useState('');
+  const [formError, setFormError] = useState('');
+
   const { register } = useAuth();
   const { error: showError } = useToast();
   const navigate = useNavigate();
@@ -21,27 +25,47 @@ export function RegisterPage() {
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
+    const trimmedEmail = email.trim();
+    const passwordStrengthPattern = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).+$/;
+    let hasValidationError = false;
 
-    // Validate passwords match
-    if (password !== confirmPassword) {
-      showError('Passwords do not match');
-      return;
+    setEmailError('');
+    setPasswordError('');
+    setConfirmPasswordError('');
+    setFormError('');
+
+    if (!trimmedEmail) {
+      setEmailError('Enter your email address');
+      hasValidationError = true;
     }
 
-    // Validate password strength
     if (password.length < 8) {
-      showError('Password must be at least 8 characters');
+      setPasswordError('Password must be at least 8 characters');
+      hasValidationError = true;
+    } else if (!passwordStrengthPattern.test(password)) {
+      setPasswordError('Password must include uppercase, lowercase, and a number');
+      hasValidationError = true;
+    }
+
+    if (password !== confirmPassword) {
+      setConfirmPasswordError('Passwords do not match');
+      hasValidationError = true;
+    }
+
+    if (hasValidationError) {
       return;
     }
 
     setIsLoading(true);
 
     try {
-      await register(email, password);
+      await register(trimmedEmail, password);
       navigate(safeRedirect);
     } catch (err) {
-      if (err instanceof ApiError) {
+      if (err instanceof ApiError && (err.code === 'NETWORK_ERROR' || err.status === 0)) {
         showError(err.message);
+      } else if (err instanceof ApiError) {
+        setFormError(err.message);
       } else {
         showError('An unexpected error occurred');
       }
@@ -64,9 +88,13 @@ export function RegisterPage() {
               label="Email"
               type="email"
               value={email}
-              onChange={(e) => setEmail(e.target.value)}
+              onChange={(e) => {
+                setEmail(e.target.value);
+                setEmailError('');
+                setFormError('');
+              }}
               placeholder="you@example.com"
-              required
+              error={emailError}
               autoFocus
             />
 
@@ -74,23 +102,34 @@ export function RegisterPage() {
               label="Password"
               type="password"
               value={password}
-              onChange={(e) => setPassword(e.target.value)}
+              onChange={(e) => {
+                setPassword(e.target.value);
+                setPasswordError('');
+                setConfirmPasswordError('');
+                setFormError('');
+              }}
               placeholder="••••••••"
-              required
+              error={passwordError}
             />
 
             <Input
               label="Confirm Password"
               type="password"
               value={confirmPassword}
-              onChange={(e) => setConfirmPassword(e.target.value)}
+              onChange={(e) => {
+                setConfirmPassword(e.target.value);
+                setConfirmPasswordError('');
+                setFormError('');
+              }}
               placeholder="••••••••"
-              required
+              error={confirmPasswordError}
             />
 
             <div className="text-xs text-gray-500">
               Password must contain at least 8 characters, one uppercase letter, one lowercase letter, and one number.
             </div>
+
+            {formError && <p className="text-sm text-red-600">{formError}</p>}
 
             <Button
               type="submit"

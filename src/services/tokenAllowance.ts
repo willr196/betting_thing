@@ -117,7 +117,7 @@ export const TokenAllowanceService = {
       );
 
       await upsertAllowance(client, userId, {
-        tokensRemaining: result.newBalance,
+        tokensRemaining: Math.max(0, status.tokensRemaining - amount),
         lastResetDate: status.lastResetDate,
       });
 

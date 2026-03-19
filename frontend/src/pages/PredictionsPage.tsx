@@ -1,11 +1,11 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
-import { formatDate, formatPoints, formatTokens, getStatusColor } from '../lib/utils';
+import { formatDate, formatPoints, formatTokens, formatCountdown, getStatusColor } from '../lib/utils';
 import { Badge, Button, Card, EmptyState, FilterChip, InlineError, Spinner, StatCard } from '../components/ui';
-import type { Accumulator, AccumulatorLeg, Prediction, PredictionStats } from '../types';
+import type { Accumulator, AccumulatorLeg, LeaderboardEntry, Prediction, PredictionStats } from '../types';
 
 const POLL_INTERVAL_MS = 60_000;
 
@@ -30,6 +30,9 @@ export function PredictionsPage() {
   const [accumulators, setAccumulators] = useState<Accumulator[]>([]);
   const [accumulatorsLoading, setAccumulatorsLoading] = useState(false);
   const [accumulatorsError, setAccumulatorsError] = useState('');
+
+  // Streak data
+  const [streak, setStreak] = useState<LeaderboardEntry | null>(null);
 
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -63,6 +66,19 @@ export function PredictionsPage() {
     }
     void loadAccumulators();
   }, [activeTab, filter]);
+
+  // Load streak data on mount
+  useEffect(() => {
+    async function loadStreak() {
+      try {
+        const data = await api.getMyLeaderboardRank('all-time');
+        setStreak(data.rank);
+      } catch {
+        // Non-critical
+      }
+    }
+    void loadStreak();
+  }, []);
 
   const loadSingles = async (silent = false) => {
     if (!silent) setSinglesLoading(true);
@@ -104,13 +120,58 @@ export function PredictionsPage() {
     }
   };
 
-  const updatePrediction = (updatedPrediction: Prediction) => {
-    setPredictions((previous) =>
-      previous.map((prediction) =>
-        prediction.id === updatedPrediction.id ? updatedPrediction : prediction
-      )
+  const updatePredictionAfterCashout = (predictionId: string, cashoutAmount: number) => {
+    const cashedOutAt = new Date().toISOString();
+
+    setPredictions((previous) => {
+      const nextPredictions = previous.map((prediction) =>
+        prediction.id === predictionId
+          ? {
+              ...prediction,
+              status: 'CASHED_OUT' as const,
+              cashoutAmount,
+              cashedOutAt,
+            }
+          : prediction
+      );
+
+      if (filter !== 'all' && filter !== 'CASHED_OUT') {
+        return nextPredictions.filter((prediction) => prediction.id !== predictionId);
+      }
+
+      return nextPredictions;
+    });
+
+    setStats((previous) =>
+      previous
+        ? {
+            ...previous,
+            pending: Math.max(0, previous.pending - 1),
+            cashedOut: previous.cashedOut + 1,
+          }
+        : previous
     );
   };
+
+  // Split predictions into active (PENDING) and settled
+  const activePredictions = predictions.filter((p) => p.status === 'PENDING');
+  const settledPredictions = predictions.filter((p) => p.status !== 'PENDING');
+
+  // Group settled predictions by date
+  const settledByDate = useMemo(() => {
+    const groups = new Map<string, Prediction[]>();
+    for (const pred of settledPredictions) {
+      const dateKey = new Date(pred.createdAt).toLocaleDateString('en-GB', {
+        day: 'numeric',
+        month: 'long',
+        year: 'numeric',
+      });
+      const group = groups.get(dateKey) ?? [];
+      group.push(pred);
+      groups.set(dateKey, group);
+    }
+    return Array.from(groups.entries());
+  }, [settledPredictions]);
 
   return (
     <div>
@@ -134,9 +195,9 @@ export function PredictionsPage() {
 
       {activeTab === 'singles' ? (
         <>
-          {/* Stats — shown only when meaningful data exists */}
+          {/* Stats — with streak info (Task 3.4) */}
           {stats && (
-            <div className="mb-6 grid grid-cols-2 gap-4 sm:grid-cols-4">
+            <div className="mb-6 grid grid-cols-2 gap-4 sm:grid-cols-5">
               <StatCard label="Total Picks" value={stats.total} />
               <StatCard
                 label="Win Rate"
@@ -156,6 +217,18 @@ export function PredictionsPage() {
                 label="Pending"
                 value={stats.pending}
                 subValue={stats.pending === 1 ? 'awaiting result' : 'awaiting results'}
+              />
+              <StatCard
+                label="Streak"
+                value={streak?.currentStreak ?? 0}
+                subValue={streak?.longestStreak ? `Best: ${streak.longestStreak}` : 'consecutive wins'}
+                trend={
+                  (streak?.currentStreak ?? 0) >= 2
+                    ? 'up'
+                    : (streak?.currentStreak ?? 0) === 0
+                      ? 'down'
+                      : 'neutral'
+                }
               />
             </div>
           )}
@@ -200,19 +273,77 @@ export function PredictionsPage() {
               }
             />
           ) : (
-            <div className="space-y-4">
-              {predictions.map((prediction) => (
-                <PredictionCard
-                  key={prediction.id}
-                  prediction={prediction}
-                  onCashoutSuccess={(updatedPrediction) => {
-                    updatePrediction(updatedPrediction);
-                    void refreshUser();
-                  }}
-                  onNotifySuccess={showSuccess}
-                  onNotifyError={showError}
-                />
-              ))}
+            <div className="space-y-6">
+              {/* Active predictions shown prominently at top */}
+              {filter === 'all' && activePredictions.length > 0 && (
+                <div>
+                  <h3 className="mb-3 text-sm font-semibold uppercase tracking-wider text-gray-400">
+                    Active
+                  </h3>
+                  <div className="space-y-4">
+                    {activePredictions.map((prediction) => (
+                      <PredictionCard
+                        key={prediction.id}
+                        prediction={prediction}
+                        showCountdown
+                        onCashoutSuccess={(predictionId, cashoutAmount) => {
+                          updatePredictionAfterCashout(predictionId, cashoutAmount);
+                          void refreshUser();
+                        }}
+                        onNotifySuccess={showSuccess}
+                        onNotifyError={showError}
+                      />
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Settled predictions grouped by date */}
+              {filter === 'all' && settledByDate.length > 0 && (
+                <div>
+                  <h3 className="mb-3 text-sm font-semibold uppercase tracking-wider text-gray-400">
+                    Settled
+                  </h3>
+                  {settledByDate.map(([dateLabel, preds]) => (
+                    <div key={dateLabel} className="mb-4">
+                      <p className="mb-2 text-xs font-medium text-gray-400">{dateLabel}</p>
+                      <div className="space-y-3">
+                        {preds.map((prediction) => (
+                          <PredictionCard
+                            key={prediction.id}
+                            prediction={prediction}
+                            onCashoutSuccess={(predictionId, cashoutAmount) => {
+                              updatePredictionAfterCashout(predictionId, cashoutAmount);
+                              void refreshUser();
+                            }}
+                            onNotifySuccess={showSuccess}
+                            onNotifyError={showError}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* When filtered (not "all"), show flat list */}
+              {filter !== 'all' && (
+                <div className="space-y-4">
+                  {predictions.map((prediction) => (
+                    <PredictionCard
+                      key={prediction.id}
+                      prediction={prediction}
+                      showCountdown={prediction.status === 'PENDING'}
+                      onCashoutSuccess={(predictionId, cashoutAmount) => {
+                        updatePredictionAfterCashout(predictionId, cashoutAmount);
+                        void refreshUser();
+                      }}
+                      onNotifySuccess={showSuccess}
+                      onNotifyError={showError}
+                    />
+                  ))}
+                </div>
+              )}
             </div>
           )}
         </>
@@ -249,12 +380,14 @@ export function PredictionsPage() {
 
 function PredictionCard({
   prediction,
+  showCountdown,
   onCashoutSuccess,
   onNotifySuccess,
   onNotifyError,
 }: {
   prediction: Prediction;
-  onCashoutSuccess: (updated: Prediction) => void;
+  showCountdown?: boolean;
+  onCashoutSuccess: (predictionId: string, cashoutAmount: number) => void;
   onNotifySuccess: (message: string) => void;
   onNotifyError: (message: string) => void;
 }) {
@@ -263,35 +396,44 @@ function PredictionCard({
   const isPending = prediction.status === 'PENDING';
   const isCashedOut = prediction.status === 'CASHED_OUT';
   const [cashoutValue, setCashoutValue] = useState<number | null>(null);
-  const [cashoutLoading, setCashoutLoading] = useState(false);
+  const [isCheckingCashoutValue, setIsCheckingCashoutValue] = useState(false);
+  const [isCashingOut, setIsCashingOut] = useState(false);
+
+  // Countdown for pending predictions
+  const eventStartsAt = prediction.event?.startsAt;
+  const timeUntilStart =
+    eventStartsAt && new Date(eventStartsAt).getTime() > Date.now()
+      ? formatCountdown(eventStartsAt)
+      : null;
 
   const handleCashoutValue = async () => {
-    setCashoutLoading(true);
+    setIsCheckingCashoutValue(true);
     try {
       const result = await api.getCashoutValue(prediction.id);
       setCashoutValue(result.cashoutValue);
     } catch {
       onNotifyError('Unable to fetch cashout value');
     } finally {
-      setCashoutLoading(false);
+      setIsCheckingCashoutValue(false);
     }
   };
 
   const handleCashout = async () => {
-    setCashoutLoading(true);
+    setIsCashingOut(true);
     try {
       const result = await api.cashoutPrediction(prediction.id);
-      onNotifySuccess(
-        `Cashed out for ${formatPoints(result.prediction.cashoutAmount ?? 0)} points`
-      );
+      const resolvedCashoutAmount = result.prediction.cashoutAmount ?? cashoutValue ?? 0;
+
+      setCashoutValue(resolvedCashoutAmount);
+      onNotifySuccess(`Cashed out for ${formatPoints(resolvedCashoutAmount)} points!`);
       for (const achievement of result.achievementsUnlocked ?? []) {
         onNotifySuccess(`${achievement.iconEmoji} Achievement unlocked: ${achievement.name}`);
       }
-      onCashoutSuccess(result.prediction);
+      onCashoutSuccess(prediction.id, resolvedCashoutAmount);
     } catch {
       onNotifyError('Cashout failed. Please try again.');
     } finally {
-      setCashoutLoading(false);
+      setIsCashingOut(false);
     }
   };
 
@@ -307,6 +449,9 @@ function PredictionCard({
               <Badge className={getStatusColor(prediction.event.status)}>
                 Event {prediction.event.status.toLowerCase()}
               </Badge>
+            )}
+            {showCountdown && timeUntilStart && (
+              <span className="text-xs text-gray-400">Starts {timeUntilStart}</span>
             )}
           </div>
 
@@ -324,6 +469,11 @@ function PredictionCard({
               >
                 {prediction.predictedOutcome}
               </span>
+              {isPending && prediction.originalOdds && (
+                <span className="ml-2 text-xs text-gray-400">
+                  @ {Number(prediction.originalOdds).toFixed(2)}x
+                </span>
+              )}
             </p>
             {prediction.event?.finalOutcome && (
               <p>
@@ -389,7 +539,13 @@ function PredictionCard({
         <div className="mt-4 border-t border-gray-100 pt-4">
           <div className="flex flex-wrap items-center gap-2">
             {cashoutValue === null ? (
-              <Button variant="secondary" size="sm" onClick={handleCashoutValue} isLoading={cashoutLoading}>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={handleCashoutValue}
+                isLoading={isCheckingCashoutValue}
+                disabled={isCashingOut}
+              >
                 Check cashout value
               </Button>
             ) : (
@@ -401,8 +557,8 @@ function PredictionCard({
                 <Button
                   size="sm"
                   onClick={handleCashout}
-                  isLoading={cashoutLoading}
-                  disabled={cashoutValue <= 0}
+                  isLoading={isCashingOut}
+                  disabled={isCashingOut || cashoutValue <= 0}
                 >
                   Cash out now
                 </Button>

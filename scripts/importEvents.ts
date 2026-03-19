@@ -1,4 +1,5 @@
 import { PrismaClient, Prisma } from '@prisma/client';
+import { SPORTS, getEnabledSports, SPORT_NAMES } from '../src/config/sports.js';
 
 const prisma = new PrismaClient();
 
@@ -7,23 +8,7 @@ const BASE_URL = process.env.THE_ODDS_API_BASE_URL || 'https://api.the-odds-api.
 const REGIONS = process.env.THE_ODDS_API_REGIONS || 'uk';
 const MARKETS = process.env.THE_ODDS_API_MARKETS || 'h2h';
 
-const ALL_SPORTS = [
-  'soccer_epl',
-  'soccer_spain_la_liga',
-  'soccer_italy_serie_a',
-  'soccer_germany_bundesliga',
-  'soccer_france_ligue_one',
-  'soccer_uefa_champs_league',
-];
-
-const SPORT_NAMES: Record<string, string> = {
-  soccer_epl: 'Premier League',
-  soccer_spain_la_liga: 'La Liga',
-  soccer_italy_serie_a: 'Serie A',
-  soccer_germany_bundesliga: 'Bundesliga',
-  soccer_france_ligue_one: 'Ligue 1',
-  soccer_uefa_champs_league: 'Champions League',
-};
+const ALL_SPORTS = SPORTS.map((s) => s.key);
 
 async function fetchOdds(sportKey: string) {
   const url = new URL(`${BASE_URL}/sports/${sportKey}/odds`);
@@ -132,11 +117,14 @@ async function main() {
   }
 
   const args = process.argv.slice(2);
+  const filteredArgs = args.filter((a) => !a.startsWith('--'));
   const sports = args.includes('--all')
     ? ALL_SPORTS
-    : args.length > 0
-      ? args
-      : ALL_SPORTS;
+    : args.includes('--all-enabled')
+      ? getEnabledSports().map((s) => s.key)
+      : filteredArgs.length > 0
+        ? filteredArgs
+        : ALL_SPORTS;
 
   console.log('🎯 Prediction Platform — Event Import');
   console.log(`Sports: ${sports.map((s) => SPORT_NAMES[s] || s).join(', ')}`);

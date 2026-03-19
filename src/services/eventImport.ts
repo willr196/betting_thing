@@ -2,6 +2,7 @@ import { Prisma } from '@prisma/client';
 import { prisma } from './database.js';
 import { OddsApiService } from './oddsApi.js';
 import { logger } from '../logger.js';
+import { getEnabledSports, SPORT_NAMES } from '../config/sports.js';
 
 // =============================================================================
 // EVENT IMPORT SERVICE
@@ -9,24 +10,6 @@ import { logger } from '../logger.js';
 // Imports upcoming events from The Odds API and upserts them into the DB.
 // New events are created; existing events (matched by externalEventId) have
 // their odds refreshed.
-
-const ALL_SPORTS = [
-  'soccer_epl',
-  'soccer_spain_la_liga',
-  'soccer_italy_serie_a',
-  'soccer_germany_bundesliga',
-  'soccer_france_ligue_one',
-  'soccer_uefa_champs_league',
-] as const;
-
-const SPORT_NAMES: Record<string, string> = {
-  soccer_epl: 'Premier League',
-  soccer_spain_la_liga: 'La Liga',
-  soccer_italy_serie_a: 'Serie A',
-  soccer_germany_bundesliga: 'Bundesliga',
-  soccer_france_ligue_one: 'Ligue 1',
-  soccer_uefa_champs_league: 'Champions League',
-};
 
 type ImportStatus = {
   lastRunAt?: Date;
@@ -62,7 +45,7 @@ export function createEventImportService(
     },
 
     async runOnce(
-      sports: string[] = [...ALL_SPORTS]
+      sports: string[] = getEnabledSports().map((s) => s.key)
     ): Promise<{ imported: number; updated: number; skipped: number }> {
       if (isRunning) {
         logger.debug('[EventImport] Previous run still in progress, skipping');

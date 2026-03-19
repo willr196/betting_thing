@@ -117,10 +117,17 @@ export function Layout() {
                     <div className="mx-2 h-4 w-px bg-gray-200" />
 
                     {/* Utility navigation */}
-                    <NavItemSecondary to="/transactions">Activity</NavItemSecondary>
+                    <NavItemSecondary to="/transactions">Transactions</NavItemSecondary>
                     <NavItemSecondary to="/rewards">Rewards</NavItemSecondary>
                     <NavItemSecondary to="/promotions">Promotions</NavItemSecondary>
                     <NavItemSecondary to="/minigames">Minigames</NavItemSecondary>
+
+                    {user?.isAdmin && (
+                      <>
+                        <div className="mx-2 h-4 w-px bg-gray-200" />
+                        <NavItem to="/admin">Admin</NavItem>
+                      </>
+                    )}
                   </div>
                 )}
 
@@ -197,11 +204,12 @@ export function Layout() {
                   <MobileNavItem to="/leagues">Leagues</MobileNavItem>
                   <MobileNavItem to="/leaderboard">Leaderboard</MobileNavItem>
                   <span className="h-3 w-px bg-gray-200" />
-                  <MobileNavItem to="/transactions">Activity</MobileNavItem>
+                  <MobileNavItem to="/transactions">Transactions</MobileNavItem>
                   <MobileNavItem to="/rewards">Rewards</MobileNavItem>
                   <MobileNavItem to="/promotions">Promotions</MobileNavItem>
                   <MobileNavItem to="/minigames">Minigames</MobileNavItem>
                   <MobileNavItem to="/wallet">Wallet</MobileNavItem>
+                  {user?.isAdmin && <MobileNavItem to="/admin">Admin</MobileNavItem>}
                 </>
               ) : (
                 <MobileNavItem to="/leaderboard">Leaderboard</MobileNavItem>

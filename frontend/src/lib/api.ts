@@ -23,6 +23,13 @@ import type {
   LeagueStandingRow,
   LeagueMembershipSummary,
   LeaguePeriod,
+  AdminUser,
+  AdminStats,
+  AdminEvent,
+  AuditLogEntry,
+  SettlementStatus,
+  OddsQuota,
+  AdminRedemption,
 } from '../types';
 
 // =============================================================================
@@ -600,6 +607,239 @@ export class ApiClient {
 
   async getAchievementProgress(limit = 3): Promise<{ next: Achievement[] }> {
     return this.request<{ next: Achievement[] }>(`/achievements/progress?limit=${limit}`);
+  }
+
+  // ===========================================================================
+  // ADMIN
+  // ===========================================================================
+
+  async getAdminStats(): Promise<{ stats: AdminStats }> {
+    return this.request<{ stats: AdminStats }>('/admin/stats');
+  }
+
+  async getAdminUsers(
+    limit = 50,
+    offset = 0
+  ): Promise<{ users: AdminUser[]; total: number }> {
+    return this.request<{ users: AdminUser[]; total: number }>(
+      `/admin/users?limit=${limit}&offset=${offset}`
+    );
+  }
+
+  async getAdminEvents(
+    limit = 50,
+    offset = 0,
+    status?: string
+  ): Promise<{ events: AdminEvent[]; total: number }> {
+    const params = new URLSearchParams({
+      limit: String(limit),
+      offset: String(offset),
+    });
+    if (status) params.set('status', status);
+    return this.request<{ events: AdminEvent[]; total: number }>(
+      `/admin/events?${params.toString()}`
+    );
+  }
+
+  async lockEvent(eventId: string): Promise<{ event: Event }> {
+    return this.request<{ event: Event }>(`/admin/events/${eventId}/lock`, {
+      method: 'POST',
+    });
+  }
+
+  async settleEvent(
+    eventId: string,
+    finalOutcome: string
+  ): Promise<{ settlement: Record<string, unknown> }> {
+    return this.request<{ settlement: Record<string, unknown> }>(
+      `/admin/events/${eventId}/settle`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ finalOutcome }),
+      }
+    );
+  }
+
+  async cancelEvent(
+    eventId: string
+  ): Promise<{ cancellation: { refunded: number } }> {
+    return this.request<{ cancellation: { refunded: number } }>(
+      `/admin/events/${eventId}/cancel`,
+      { method: 'POST' }
+    );
+  }
+
+  async autoLockEvents(): Promise<{ locked: number }> {
+    return this.request<{ locked: number }>('/admin/events/auto-lock', {
+      method: 'POST',
+    });
+  }
+
+  async triggerEventImport(): Promise<Record<string, unknown>> {
+    return this.request<Record<string, unknown>>('/admin/events/import', {
+      method: 'POST',
+    });
+  }
+
+  async importEventsBySport(sportKey: string): Promise<{
+    imported: number;
+    updated: number;
+    skipped: number;
+    sport: { key: string; name: string };
+  }> {
+    return this.request<{
+      imported: number;
+      updated: number;
+      skipped: number;
+      sport: { key: string; name: string };
+    }>(`/admin/events/import/${encodeURIComponent(sportKey)}`, { method: 'POST' });
+  }
+
+  async triggerOddsSync(): Promise<{
+    updatedEvents: number;
+    quota: OddsQuota;
+  }> {
+    return this.request<{ updatedEvents: number; quota: OddsQuota }>(
+      '/admin/odds/sync',
+      { method: 'POST' }
+    );
+  }
+
+  async getOddsQuota(): Promise<{ quota: OddsQuota }> {
+    return this.request<{ quota: OddsQuota }>('/admin/odds/quota');
+  }
+
+  async triggerSettlement(): Promise<Record<string, unknown>> {
+    return this.request<Record<string, unknown>>('/admin/settlement/run', {
+      method: 'POST',
+    });
+  }
+
+  async getSettlementStatus(): Promise<{ status: SettlementStatus }> {
+    return this.request<{ status: SettlementStatus }>(
+      '/admin/settlement/status'
+    );
+  }
+
+  async createAdminReward(data: {
+    name: string;
+    description?: string;
+    pointsCost: number;
+    stockLimit?: number;
+    imageUrl?: string;
+  }): Promise<{ reward: Reward }> {
+    return this.request<{ reward: Reward }>('/admin/rewards', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateAdminReward(
+    id: string,
+    data: {
+      name?: string;
+      description?: string;
+      pointsCost?: number;
+      stockLimit?: number | null;
+      imageUrl?: string | null;
+      isActive?: boolean;
+    }
+  ): Promise<{ reward: Reward }> {
+    return this.request<{ reward: Reward }>(`/admin/rewards/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async getAdminRewards(
+    limit = 50,
+    offset = 0
+  ): Promise<{ rewards: Reward[]; total: number }> {
+    return this.request<{ rewards: Reward[]; total: number }>(
+      `/admin/rewards?limit=${limit}&offset=${offset}`
+    );
+  }
+
+  async getAdminRedemptions(
+    status?: string,
+    limit = 50,
+    offset = 0
+  ): Promise<{ redemptions: AdminRedemption[]; total: number }> {
+    const params = new URLSearchParams({
+      limit: String(limit),
+      offset: String(offset),
+    });
+    if (status) params.set('status', status);
+    return this.request<{ redemptions: AdminRedemption[]; total: number }>(
+      `/admin/redemptions?${params.toString()}`
+    );
+  }
+
+  async fulfilRedemption(
+    id: string,
+    fulfilmentNote?: string
+  ): Promise<{ redemption: Redemption }> {
+    return this.request<{ redemption: Redemption }>(
+      `/admin/redemptions/${id}/fulfil`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ fulfilmentNote }),
+      }
+    );
+  }
+
+  async cancelRedemption(id: string): Promise<{ redemption: Redemption }> {
+    return this.request<{ redemption: Redemption }>(
+      `/admin/redemptions/${id}/cancel`,
+      { method: 'POST' }
+    );
+  }
+
+  async creditTokens(
+    userId: string,
+    amount: number,
+    description?: string
+  ): Promise<{ transaction: TokenTransaction; user: { id: string; tokenBalance: number } }> {
+    return this.request<{
+      transaction: TokenTransaction;
+      user: { id: string; tokenBalance: number };
+    }>('/admin/tokens/credit', {
+      method: 'POST',
+      body: JSON.stringify({ userId, amount, description }),
+    });
+  }
+
+  async verifyUserBalance(
+    userId: string
+  ): Promise<{ balance: { cached: number; calculated: number; discrepancy?: number } }> {
+    return this.request<{
+      balance: { cached: number; calculated: number; discrepancy?: number };
+    }>(`/admin/users/${userId}/balance`);
+  }
+
+  async repairUserBalance(
+    userId: string
+  ): Promise<{ balance: Record<string, unknown> }> {
+    return this.request<{ balance: Record<string, unknown> }>(
+      `/admin/users/${userId}/balance/repair`,
+      { method: 'POST' }
+    );
+  }
+
+  async recalculateLeagues(): Promise<Record<string, unknown>> {
+    return this.request<Record<string, unknown>>(
+      '/admin/leagues/recalculate',
+      { method: 'POST' }
+    );
+  }
+
+  async getAuditLog(
+    limit = 50,
+    offset = 0
+  ): Promise<{ entries: AuditLogEntry[]; total: number }> {
+    return this.request<{ entries: AuditLogEntry[]; total: number }>(
+      `/admin/audit-log?limit=${limit}&offset=${offset}`
+    );
   }
 }
 

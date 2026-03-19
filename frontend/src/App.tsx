@@ -23,6 +23,14 @@ import {
   LeagueSettingsPage,
   LeagueJoinPage,
 } from './pages';
+import {
+  AdminDashboardPage,
+  AdminEventsPage,
+  AdminUsersPage,
+  AdminRewardsPage,
+  AdminSystemPage,
+} from './pages/admin';
+import { AdminLayout } from './components/AdminLayout';
 
 // =============================================================================
 // PROTECTED ROUTE
@@ -153,6 +161,15 @@ function AppRoutes() {
         <Route path="wallet" element={<ErrorBoundary><WalletPage /></ErrorBoundary>} />
       </Route>
 
+      {/* Admin routes */}
+      <Route path="/admin" element={<AdminLayout />}>
+        <Route index element={<ErrorBoundary><AdminDashboardPage /></ErrorBoundary>} />
+        <Route path="events" element={<ErrorBoundary><AdminEventsPage /></ErrorBoundary>} />
+        <Route path="users" element={<ErrorBoundary><AdminUsersPage /></ErrorBoundary>} />
+        <Route path="rewards" element={<ErrorBoundary><AdminRewardsPage /></ErrorBoundary>} />
+        <Route path="system" element={<ErrorBoundary><AdminSystemPage /></ErrorBoundary>} />
+      </Route>
+
       {/* Catch all */}
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
@@ -167,13 +184,13 @@ export default function App() {
   return (
     <BrowserRouter>
       <ErrorBoundary>
-        <ToastProvider>
-          <AuthProvider>
+        <AuthProvider>
+          <ToastProvider>
             <BetSlipProvider>
               <AppRoutes />
             </BetSlipProvider>
-          </AuthProvider>
-        </ToastProvider>
+          </ToastProvider>
+        </AuthProvider>
       </ErrorBoundary>
     </BrowserRouter>
   );

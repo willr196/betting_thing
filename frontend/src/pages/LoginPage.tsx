@@ -9,7 +9,10 @@ export function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  
+  const [emailError, setEmailError] = useState('');
+  const [passwordError, setPasswordError] = useState('');
+  const [formError, setFormError] = useState('');
+
   const { login } = useAuth();
   const { error: showError } = useToast();
   const navigate = useNavigate();
@@ -20,14 +23,37 @@ export function LoginPage() {
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
+    const trimmedEmail = email.trim();
+    let hasValidationError = false;
+
+    setEmailError('');
+    setPasswordError('');
+    setFormError('');
+
+    if (!trimmedEmail) {
+      setEmailError('Enter your email address');
+      hasValidationError = true;
+    }
+
+    if (!password) {
+      setPasswordError('Enter your password');
+      hasValidationError = true;
+    }
+
+    if (hasValidationError) {
+      return;
+    }
+
     setIsLoading(true);
 
     try {
-      await login(email, password);
+      await login(trimmedEmail, password);
       navigate(safeRedirect);
     } catch (err) {
-      if (err instanceof ApiError) {
+      if (err instanceof ApiError && (err.code === 'NETWORK_ERROR' || err.status === 0)) {
         showError(err.message);
+      } else if (err instanceof ApiError) {
+        setFormError(err.message);
       } else {
         showError('An unexpected error occurred');
       }
@@ -50,9 +76,13 @@ export function LoginPage() {
               label="Email"
               type="email"
               value={email}
-              onChange={(e) => setEmail(e.target.value)}
+              onChange={(e) => {
+                setEmail(e.target.value);
+                setEmailError('');
+                setFormError('');
+              }}
               placeholder="you@example.com"
-              required
+              error={emailError}
               autoFocus
             />
 
@@ -60,10 +90,16 @@ export function LoginPage() {
               label="Password"
               type="password"
               value={password}
-              onChange={(e) => setPassword(e.target.value)}
+              onChange={(e) => {
+                setPassword(e.target.value);
+                setPasswordError('');
+                setFormError('');
+              }}
               placeholder="••••••••"
-              required
+              error={passwordError}
             />
+
+            {formError && <p className="text-sm text-red-600">{formError}</p>}
 
             <Button
               type="submit"

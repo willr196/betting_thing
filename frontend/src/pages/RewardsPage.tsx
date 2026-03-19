@@ -44,6 +44,7 @@ export function RewardsPage() {
       }
     } catch {
       setLoadError('Rewards could not be loaded right now.');
+      showError('Unable to load rewards');
     } finally {
       setIsLoading(false);
     }

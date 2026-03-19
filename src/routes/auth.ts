@@ -49,7 +49,7 @@ function clearRefreshCookie(res: Response) {
 
 const loginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 10,
+  max: 5, // 5 login attempts per 15 min window
   message: {
     success: false,
     error: {
@@ -83,6 +83,20 @@ const refreshLimiter = rateLimit({
     error: {
       code: 'RATE_LIMITED',
       message: 'Too many refresh attempts. Please try again later.',
+    },
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+const changePasswordLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 5,
+  message: {
+    success: false,
+    error: {
+      code: 'RATE_LIMITED',
+      message: 'Too many password change attempts. Please try again in 15 minutes.',
     },
   },
   standardHeaders: true,
@@ -243,6 +257,7 @@ router.get(
  */
 router.post(
   '/change-password',
+  changePasswordLimiter,
   requireAuth,
   validateBody(changePasswordSchema),
   asyncHandler(async (req: Request, res: Response) => {

@@ -391,7 +391,7 @@ export const PredictionService = {
       const refreshedOdds = await resolveEventOddsWithFallback(
         event,
         CASHOUT_ODDS_POLICY,
-        { forceRefresh: true, tx }
+        { tx }
       );
 
       const refreshedOutcomeOdds = findOddsOutcome(

@@ -11,7 +11,8 @@ import { EventImportService } from '../services/eventImport.js';
 import { AuditLogService } from '../services/auditLog.js';
 import { LeagueStandingsService } from '../services/leagueStandings.js';
 import { requireAuth, requireAdmin, validateBody, validateParams, getAuthUser, idParamSchema, positiveIntSchema, futureDateSchema } from '../middleware/index.js';
-import { asyncHandler, parseLimitOffset, sendSuccess } from '../utils/index.js';
+import { asyncHandler, parseLimitOffset, sendSuccess, AppError } from '../utils/index.js';
+import { getSportByKey } from '../config/sports.js';
 
 const router = Router();
 
@@ -185,6 +186,37 @@ router.post(
 );
 
 /**
+ * GET /admin/events
+ * List all events with optional status filter.
+ */
+router.get(
+  '/events',
+  asyncHandler(async (req, res) => {
+    const query = req.query as Record<string, unknown>;
+    const { limit, offset } = parseLimitOffset(query, {
+      defaultLimit: 50,
+      maxLimit: 100,
+    });
+    const status = query.status as string | undefined;
+    const where: Record<string, unknown> = {};
+    if (status) where.status = status;
+
+    const [events, total] = await Promise.all([
+      prisma.event.findMany({
+        where,
+        orderBy: { startsAt: 'desc' },
+        take: limit,
+        skip: offset,
+        include: { _count: { select: { predictions: true } } },
+      }),
+      prisma.event.count({ where }),
+    ]);
+
+    sendSuccess(res, { events, total });
+  })
+);
+
+/**
  * POST /admin/events/auto-lock
  * Auto-lock all events that have started.
  */
@@ -198,13 +230,30 @@ router.post(
 
 /**
  * POST /admin/events/import
- * Trigger an event import from The Odds API.
+ * Trigger an event import from The Odds API (all enabled sports).
  */
 router.post(
   '/events/import',
   asyncHandler(async (_req, res) => {
     const result = await EventImportService.runOnce();
     sendSuccess(res, result);
+  })
+);
+
+/**
+ * POST /admin/events/import/:sportKey
+ * Trigger an event import for a specific sport key.
+ */
+router.post(
+  '/events/import/:sportKey',
+  asyncHandler(async (req, res) => {
+    const sportKey = req.params['sportKey'] as string;
+    const sport = getSportByKey(sportKey);
+    if (!sport) {
+      throw AppError.notFound('Sport');
+    }
+    const result = await EventImportService.runOnce([sportKey]);
+    sendSuccess(res, { ...result, sport: { key: sport.key, name: sport.name } });
   })
 );
 
@@ -234,6 +283,17 @@ router.post(
       ...result,
       quota: OddsApiService.getQuotaStatus(),
     });
+  })
+);
+
+/**
+ * GET /admin/odds/quota
+ * Get current Odds API quota status.
+ */
+router.get(
+  '/odds/quota',
+  asyncHandler(async (_req, res) => {
+    sendSuccess(res, { quota: OddsApiService.getQuotaStatus() });
   })
 );
 
@@ -413,6 +473,7 @@ router.get(
           id: true,
           email: true,
           tokenBalance: true,
+          pointsBalance: true,
           isAdmin: true,
           isVerified: true,
           createdAt: true,

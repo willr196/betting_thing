@@ -337,3 +337,59 @@ export interface LeagueStandingRow {
   winRate: number;
   updatedAt: string;
 }
+
+// =============================================================================
+// ADMIN TYPES
+// =============================================================================
+
+export interface AdminUser {
+  id: string;
+  email: string;
+  tokenBalance: number;
+  pointsBalance: number;
+  isAdmin: boolean;
+  isVerified: boolean;
+  createdAt: string;
+  _count: { predictions: number; redemptions: number };
+}
+
+export interface AdminStats {
+  users: number;
+  events: { total: number; open: number; settled: number };
+  predictions: number;
+  redemptions: { total: number; pending: number };
+  tokens: { inCirculation: number };
+  points: { inCirculation: number; totalPaidOut: number; totalRedeemed: number };
+}
+
+export interface AdminEvent extends Event {
+  _count?: { predictions: number };
+}
+
+export interface AuditLogEntry {
+  id: string;
+  adminId: string;
+  action: string;
+  targetType: string | null;
+  targetId: string | null;
+  details: Record<string, unknown> | null;
+  createdAt: string;
+}
+
+export interface SettlementStatus {
+  isRunning: boolean;
+  lastRunAt: string | null;
+  lastResult: Record<string, unknown> | null;
+}
+
+export interface OddsQuota {
+  monthlyQuota: number;
+  remainingRequests: number | null;
+  remainingPercent: number | null;
+  nonEssentialPollingAllowed: boolean;
+}
+
+export interface AdminRedemption extends Redemption {
+  user?: { email: string };
+  reward?: Reward;
+}
