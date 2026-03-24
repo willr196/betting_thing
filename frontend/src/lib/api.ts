@@ -641,6 +641,39 @@ export class ApiClient {
     );
   }
 
+  async createAdminEvent(data: {
+    title: string;
+    description?: string;
+    startsAt: string;
+    outcomes: string[];
+    payoutMultiplier: number;
+    odds: Array<{ name: string; price: number }>;
+    detachFromExternalSource?: boolean;
+  }): Promise<{ event: Event }> {
+    return this.request<{ event: Event }>('/admin/events', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateAdminEvent(
+    eventId: string,
+    data: {
+      title?: string;
+      description?: string | null;
+      startsAt?: string;
+      outcomes?: string[];
+      payoutMultiplier?: number;
+      odds?: Array<{ name: string; price: number }>;
+      detachFromExternalSource?: boolean;
+    }
+  ): Promise<{ event: Event }> {
+    return this.request<{ event: Event }>(`/admin/events/${eventId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+  }
+
   async lockEvent(eventId: string): Promise<{ event: Event }> {
     return this.request<{ event: Event }>(`/admin/events/${eventId}/lock`, {
       method: 'POST',

@@ -5,7 +5,7 @@ import { useToast } from '../context/ToastContext';
 import { ApiError } from '../lib/api';
 import { Button, Input, Card } from '../components/ui';
 
-export function LoginPage() {
+export function AdminLoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -13,13 +13,13 @@ export function LoginPage() {
   const [passwordError, setPasswordError] = useState('');
   const [formError, setFormError] = useState('');
 
-  const { login } = useAuth();
+  const { login, logout } = useAuth();
   const { error: showError } = useToast();
   const navigate = useNavigate();
   const location = useLocation();
 
   const redirect = new URLSearchParams(location.search).get('redirect');
-  const safeRedirect = redirect && redirect.startsWith('/') ? redirect : '/events';
+  const safeRedirect = redirect && redirect.startsWith('/admin') ? redirect : '/admin';
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -31,7 +31,7 @@ export function LoginPage() {
     setFormError('');
 
     if (!trimmedEmail) {
-      setEmailError('Enter your email address');
+      setEmailError('Enter your admin email address');
       hasValidationError = true;
     }
 
@@ -47,7 +47,14 @@ export function LoginPage() {
     setIsLoading(true);
 
     try {
-      await login(trimmedEmail, password);
+      const user = await login(trimmedEmail, password);
+
+      if (!user.isAdmin) {
+        await logout();
+        setFormError('This account does not have admin access.');
+        return;
+      }
+
       navigate(safeRedirect);
     } catch (err) {
       if (err instanceof ApiError && (err.code === 'NETWORK_ERROR' || err.status === 0)) {
@@ -65,15 +72,18 @@ export function LoginPage() {
   return (
     <div className="min-h-[80vh] flex items-center justify-center">
       <div className="w-full max-w-md">
-        <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold text-gray-900">Welcome back</h1>
-          <p className="mt-2 text-gray-600">Sign in to your account</p>
+        <div className="mb-8 text-center">
+          <p className="text-sm font-semibold uppercase tracking-[0.3em] text-gray-400">
+            Admin
+          </p>
+          <h1 className="mt-2 text-3xl font-bold text-gray-900">Admin sign in</h1>
+          <p className="mt-2 text-gray-600">Access event controls, odds editing, and settlement.</p>
         </div>
 
         <Card>
           <form onSubmit={handleSubmit} className="space-y-4">
             <Input
-              label="Email"
+              label="Admin Email"
               type="email"
               value={email}
               onChange={(e) => {
@@ -81,7 +91,7 @@ export function LoginPage() {
                 setEmailError('');
                 setFormError('');
               }}
-              placeholder="you@example.com"
+              placeholder="admin@example.com"
               error={emailError}
               autoFocus
             />
@@ -107,32 +117,24 @@ export function LoginPage() {
               size="lg"
               isLoading={isLoading}
             >
-              Sign In
+              Sign In To Admin
             </Button>
           </form>
 
-          <p className="mt-6 text-center text-sm text-gray-600">
-            Don't have an account?{' '}
-            <Link
-              to={`/register${redirect ? `?redirect=${encodeURIComponent(redirect)}` : ''}`}
-              className="text-primary-600 hover:underline font-medium"
-            >
-              Sign up
+          <div className="mt-6 flex items-center justify-between text-sm text-gray-600">
+            <Link to="/login" className="font-medium text-primary-600 hover:underline">
+              Standard login
             </Link>
-          </p>
-          <p className="mt-2 text-center text-sm text-gray-500">
-            Admin access?{' '}
-            <Link to="/admin/login" className="font-medium text-primary-600 hover:underline">
-              Use admin sign in
+            <Link to="/events" className="hover:underline">
+              Back to app
             </Link>
-          </p>
+          </div>
         </Card>
 
         {import.meta.env.DEV && (
-          <div className="mt-6 p-4 bg-gray-100 rounded-lg text-sm text-gray-600">
-            <p className="font-medium mb-2">Test accounts (dev only):</p>
-            <p>Admin: admin@example.com / Admin123!</p>
-            <p>User: test@example.com / Test123!</p>
+          <div className="mt-6 rounded-lg bg-gray-100 p-4 text-sm text-gray-600">
+            <p className="mb-2 font-medium">Dev admin account:</p>
+            <p>admin@example.com / Admin123!</p>
           </div>
         )}
       </div>

@@ -1,4 +1,5 @@
 export { LoginPage } from './LoginPage';
+export { AdminLoginPage } from './AdminLoginPage';
 export { RegisterPage } from './RegisterPage';
 export { EventsPage } from './EventsPage';
 export { EventDetailPage } from './EventDetailPage';

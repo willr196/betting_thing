@@ -23,18 +23,37 @@ router.use(requireAuth, requireAdmin);
 // VALIDATION SCHEMAS
 // =============================================================================
 
+const manualOddsSchema = z.array(
+  z.object({
+    name: z.string().trim().min(1, 'Outcome name is required'),
+    price: z.coerce.number().gt(1, 'Odds must be greater than 1'),
+  })
+).min(2, 'At least 2 outcome prices are required');
+
 const createEventSchema = z.object({
   title: z.string().min(1, 'Title is required').max(200),
   description: z.string().max(2000).optional(),
   startsAt: futureDateSchema,
   outcomes: z.array(z.string().min(1)).min(2, 'At least 2 outcomes required'),
   payoutMultiplier: z.number().min(1).max(10).default(2.0),
+  odds: manualOddsSchema.optional(),
   externalEventId: z.string().min(1).optional(),
   externalSportKey: z.string().min(1).optional(),
+  detachFromExternalSource: z.boolean().optional(),
 });
 
 const settleEventSchema = z.object({
   finalOutcome: z.string().min(1, 'Final outcome is required'),
+});
+
+const updateEventSchema = z.object({
+  title: z.string().trim().min(1).max(200).optional(),
+  description: z.string().max(2000).nullable().optional(),
+  startsAt: z.coerce.date().optional(),
+  outcomes: z.array(z.string().min(1)).min(2, 'At least 2 outcomes required').optional(),
+  payoutMultiplier: z.coerce.number().min(1).max(10).optional(),
+  odds: manualOddsSchema.optional(),
+  detachFromExternalSource: z.boolean().optional(),
 });
 
 const createRewardSchema = z.object({
@@ -83,8 +102,10 @@ router.post(
       startsAt,
       outcomes,
       payoutMultiplier,
+      odds,
       externalEventId,
       externalSportKey,
+      detachFromExternalSource,
     } = req.body;
 
     const event = await EventService.create({
@@ -93,9 +114,11 @@ router.post(
       startsAt: new Date(startsAt),
       outcomes,
       payoutMultiplier,
+      odds,
       createdBy: userId,
       externalEventId,
       externalSportKey,
+      detachFromExternalSource,
     });
 
     await AuditLogService.log({
@@ -103,10 +126,40 @@ router.post(
       action: 'CREATE_EVENT',
       targetType: 'EVENT',
       targetId: event.id,
-      details: { title, startsAt, outcomes, payoutMultiplier },
+      details: {
+        title,
+        startsAt,
+        outcomes,
+        payoutMultiplier,
+        localOnly: !event.externalEventId || !event.externalSportKey,
+      },
     });
 
     sendSuccess(res, { event }, 201);
+  })
+);
+
+/**
+ * PATCH /admin/events/:id
+ * Update an OPEN/LOCKED event for local/manual event management.
+ */
+router.patch(
+  '/events/:id',
+  validateParams(idParamSchema),
+  validateBody(updateEventSchema),
+  asyncHandler(async (req, res) => {
+    const { userId } = getAuthUser(req);
+    const event = await EventService.update(req.params.id as string, req.body);
+
+    await AuditLogService.log({
+      adminId: userId,
+      action: 'UPDATE_EVENT',
+      targetType: 'EVENT',
+      targetId: event.id,
+      details: req.body as Record<string, unknown>,
+    });
+
+    sendSuccess(res, { event });
   })
 );
 

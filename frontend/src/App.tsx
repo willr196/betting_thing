@@ -7,6 +7,7 @@ import { Spinner } from './components/ui';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import {
   LoginPage,
+  AdminLoginPage,
   RegisterPage,
   EventsPage,
   EventDetailPage,
@@ -81,6 +82,31 @@ function PublicRoute({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+function AdminPublicRoute({ children }: { children: React.ReactNode }) {
+  const { user, isAuthenticated, isLoading } = useAuth();
+  const location = useLocation();
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <Spinner size="lg" />
+      </div>
+    );
+  }
+
+  if (isAuthenticated) {
+    const redirect = new URLSearchParams(location.search).get('redirect');
+    if (user?.isAdmin) {
+      const safeRedirect = redirect && redirect.startsWith('/admin') ? redirect : '/admin';
+      return <Navigate to={safeRedirect} replace />;
+    }
+
+    return <Navigate to="/events" replace />;
+  }
+
+  return <>{children}</>;
+}
+
 function OpenRoute({ children }: { children: React.ReactNode }) {
   const { isLoading } = useAuth();
 
@@ -90,6 +116,30 @@ function OpenRoute({ children }: { children: React.ReactNode }) {
         <Spinner size="lg" />
       </div>
     );
+  }
+
+  return <>{children}</>;
+}
+
+function AdminProtectedRoute({ children }: { children: React.ReactNode }) {
+  const { user, isAuthenticated, isLoading } = useAuth();
+  const location = useLocation();
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <Spinner size="lg" />
+      </div>
+    );
+  }
+
+  if (!isAuthenticated) {
+    const redirect = `${location.pathname}${location.search}`;
+    return <Navigate to={`/admin/login?redirect=${encodeURIComponent(redirect)}`} replace />;
+  }
+
+  if (!user?.isAdmin) {
+    return <Navigate to="/events" replace />;
   }
 
   return <>{children}</>;
@@ -112,6 +162,17 @@ function AppRoutes() {
         }
       >
         <Route index element={<ErrorBoundary><LoginPage /></ErrorBoundary>} />
+      </Route>
+
+      <Route
+        path="/admin/login"
+        element={
+          <AdminPublicRoute>
+            <Layout />
+          </AdminPublicRoute>
+        }
+      >
+        <Route index element={<ErrorBoundary><AdminLoginPage /></ErrorBoundary>} />
       </Route>
 
       <Route
@@ -162,7 +223,14 @@ function AppRoutes() {
       </Route>
 
       {/* Admin routes */}
-      <Route path="/admin" element={<AdminLayout />}>
+      <Route
+        path="/admin"
+        element={
+          <AdminProtectedRoute>
+            <AdminLayout />
+          </AdminProtectedRoute>
+        }
+      >
         <Route index element={<ErrorBoundary><AdminDashboardPage /></ErrorBoundary>} />
         <Route path="events" element={<ErrorBoundary><AdminEventsPage /></ErrorBoundary>} />
         <Route path="users" element={<ErrorBoundary><AdminUsersPage /></ErrorBoundary>} />

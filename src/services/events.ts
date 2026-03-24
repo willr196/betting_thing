@@ -7,10 +7,16 @@ import { AchievementService } from './achievements.js';
 import { LeaderboardService } from './leaderboard.js';
 import { LeagueStandingsService } from './leagueStandings.js';
 import { AccumulatorService } from './accumulators.js';
+import { matchOutcomeExact, normalizeOutcome } from './outcomes.js';
 import { AppError } from '../utils/index.js';
 import type { SettlementResult } from '../types/index.js';
 import type { NormalizedOdds } from './oddsApi.js';
 import { logger } from '../logger.js';
+
+type EditableOddsOutcome = {
+  name: string;
+  price: number;
+};
 
 // =============================================================================
 // EVENT SERVICE
@@ -26,30 +32,143 @@ export const EventService = {
     startsAt: Date;
     outcomes: string[];
     payoutMultiplier?: number;
+    odds?: EditableOddsOutcome[];
     createdBy: string;
     externalEventId?: string;
     externalSportKey?: string;
+    detachFromExternalSource?: boolean;
   }) {
-    if (data.outcomes.length < 2) {
-      throw AppError.badRequest('Event must have at least 2 possible outcomes');
-    }
-
     if (data.startsAt.getTime() <= Date.now()) {
       throw AppError.badRequest('Event start time must be in the future');
     }
+
+    const outcomes = sanitizeOutcomeNames(data.outcomes);
+    const payoutMultiplier = data.payoutMultiplier ?? 2.0;
+    const hasAnyExternalMapping = Boolean(data.externalEventId || data.externalSportKey);
+    const hasFullExternalMapping = Boolean(data.externalEventId && data.externalSportKey);
+    const localOnly =
+      data.detachFromExternalSource === true || !hasFullExternalMapping;
+
+    if (!data.detachFromExternalSource && hasAnyExternalMapping && !hasFullExternalMapping) {
+      throw AppError.badRequest(
+        'External event ID and sport key must be provided together'
+      );
+    }
+
+    const odds = data.odds
+      ? buildOddsSnapshot(outcomes, data.odds)
+      : buildDefaultOddsSnapshot(outcomes, payoutMultiplier);
 
     return prisma.event.create({
       data: {
         title: data.title,
         description: data.description,
         startsAt: data.startsAt,
-        outcomes: data.outcomes,
-        payoutMultiplier: data.payoutMultiplier ?? 2.0,
+        outcomes,
+        payoutMultiplier,
         createdBy: data.createdBy,
         status: 'OPEN',
-        externalEventId: data.externalEventId,
-        externalSportKey: data.externalSportKey,
+        externalEventId: localOnly ? null : data.externalEventId,
+        externalSportKey: localOnly ? null : data.externalSportKey,
+        currentOdds: odds as unknown as Prisma.InputJsonValue,
+        oddsUpdatedAt: new Date(odds.updatedAt),
       },
+    });
+  },
+
+  async update(
+    eventId: string,
+    data: {
+      title?: string;
+      description?: string | null;
+      startsAt?: Date;
+      outcomes?: string[];
+      payoutMultiplier?: number;
+      odds?: EditableOddsOutcome[];
+      detachFromExternalSource?: boolean;
+    }
+  ) {
+    return prisma.$transaction(async (tx) => {
+      const event = await tx.event.findUnique({
+        where: { id: eventId },
+        include: {
+          _count: {
+            select: { predictions: true },
+          },
+        },
+      });
+
+      if (!event) {
+        throw AppError.notFound('Event');
+      }
+
+      if (event.status === 'SETTLED' || event.status === 'CANCELLED') {
+        throw AppError.badRequest('Only OPEN or LOCKED events can be edited');
+      }
+
+      if (data.startsAt) {
+        if (event.status !== 'OPEN') {
+          throw AppError.badRequest('Only OPEN events can change start time');
+        }
+
+        if (data.startsAt.getTime() <= Date.now()) {
+          throw AppError.badRequest('Event start time must be in the future');
+        }
+      }
+
+      const nextOutcomes = data.outcomes
+        ? sanitizeOutcomeNames(data.outcomes)
+        : event.outcomes;
+
+      if (
+        event._count.predictions > 0 &&
+        !haveSameOutcomeSet(event.outcomes, nextOutcomes)
+      ) {
+        throw AppError.badRequest(
+          'Cannot change event outcomes after predictions have been placed'
+        );
+      }
+
+      const nextPayoutMultiplier = data.payoutMultiplier ?? event.payoutMultiplier;
+      const currentOdds = getStoredOddsSnapshot(event.currentOdds);
+      let nextOdds: NormalizedOdds | undefined;
+
+      if (data.odds) {
+        nextOdds = buildOddsSnapshot(nextOutcomes, data.odds);
+      } else if (data.outcomes || !currentOdds) {
+        nextOdds = buildOddsSnapshotFromExisting(
+          nextOutcomes,
+          currentOdds,
+          nextPayoutMultiplier
+        );
+      }
+
+      const nextTitle = data.title?.trim();
+      const nextDescription =
+        data.description === undefined ? event.description : data.description?.trim() || null;
+
+      return tx.event.update({
+        where: { id: eventId },
+        data: {
+          title: nextTitle && nextTitle.length > 0 ? nextTitle : event.title,
+          description: nextDescription,
+          startsAt: data.startsAt ?? event.startsAt,
+          outcomes: nextOutcomes,
+          payoutMultiplier: nextPayoutMultiplier,
+          ...(nextOdds
+            ? {
+                currentOdds: nextOdds as unknown as Prisma.InputJsonValue,
+                oddsUpdatedAt: new Date(nextOdds.updatedAt),
+              }
+            : {}),
+          ...(data.detachFromExternalSource
+            ? {
+                externalEventId: null,
+                externalSportKey: null,
+              }
+            : {}),
+        },
+      });
     });
   },
 
@@ -519,4 +638,157 @@ export const EventService = {
 
 export function calculatePayout(stakeAmount: number, odds: number): number {
   return Math.floor(stakeAmount * odds);
+}
+
+function sanitizeOutcomeNames(outcomes: string[]): string[] {
+  if (outcomes.length < 2) {
+    throw AppError.badRequest('Event must have at least 2 possible outcomes');
+  }
+
+  const normalizedSeen = new Set<string>();
+  const sanitized = outcomes.map((outcome) => {
+    const trimmed = outcome.trim().replace(/\s+/g, ' ');
+    if (!trimmed) {
+      throw AppError.badRequest('Event outcomes cannot be empty');
+    }
+
+    const normalized = normalizeOutcome(trimmed);
+    if (normalizedSeen.has(normalized)) {
+      throw AppError.badRequest('Event outcomes must be unique');
+    }
+    normalizedSeen.add(normalized);
+
+    return trimmed;
+  });
+
+  return sanitized;
+}
+
+function buildOddsSnapshot(
+  outcomes: string[],
+  odds: EditableOddsOutcome[],
+  updatedAt = new Date().toISOString()
+): NormalizedOdds {
+  if (odds.length < 2) {
+    throw AppError.badRequest('Odds must be provided for at least 2 outcomes');
+  }
+
+  const matchedOutcomes = outcomes.map((outcome) => {
+    const matchingOdds = odds.find(
+      (candidate) => matchOutcomeExact([outcome], candidate.name) === outcome
+    );
+
+    if (!matchingOdds) {
+      throw AppError.badRequest(
+        `Missing odds for outcome "${outcome}"`
+      );
+    }
+
+    if (!Number.isFinite(matchingOdds.price) || matchingOdds.price <= 1) {
+      throw AppError.badRequest(
+        `Odds for "${outcome}" must be greater than 1`
+      );
+    }
+
+    return {
+      name: outcome,
+      price: matchingOdds.price,
+    };
+  });
+
+  if (matchedOutcomes.length !== odds.length) {
+    throw AppError.badRequest('Odds entries must match the event outcomes exactly');
+  }
+
+  return {
+    outcomes: matchedOutcomes,
+    updatedAt,
+  };
+}
+
+function buildDefaultOddsSnapshot(
+  outcomes: string[],
+  payoutMultiplier: number
+): NormalizedOdds {
+  return {
+    outcomes: outcomes.map((outcome) => ({
+      name: outcome,
+      price: payoutMultiplier,
+    })),
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+function buildOddsSnapshotFromExisting(
+  outcomes: string[],
+  existingOdds: NormalizedOdds | null,
+  payoutMultiplier: number
+): NormalizedOdds {
+  if (!existingOdds) {
+    return buildDefaultOddsSnapshot(outcomes, payoutMultiplier);
+  }
+
+  return {
+    outcomes: outcomes.map((outcome) => ({
+      name: outcome,
+      price:
+        existingOdds.outcomes.find(
+          (candidate) => matchOutcomeExact([outcome], candidate.name) === outcome
+        )?.price ?? payoutMultiplier,
+    })),
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+function getStoredOddsSnapshot(currentOdds: unknown): NormalizedOdds | null {
+  if (!currentOdds || typeof currentOdds !== 'object' || Array.isArray(currentOdds)) {
+    return null;
+  }
+
+  const candidate = currentOdds as {
+    outcomes?: unknown;
+    updatedAt?: unknown;
+  };
+
+  if (!Array.isArray(candidate.outcomes) || typeof candidate.updatedAt !== 'string') {
+    return null;
+  }
+
+  const outcomes = candidate.outcomes.map((outcome) => {
+    if (!outcome || typeof outcome !== 'object' || Array.isArray(outcome)) {
+      return null;
+    }
+
+    const parsed = outcome as { name?: unknown; price?: unknown };
+    if (typeof parsed.name !== 'string' || typeof parsed.price !== 'number') {
+      return null;
+    }
+
+    if (!Number.isFinite(parsed.price)) {
+      return null;
+    }
+
+    return {
+      name: parsed.name,
+      price: parsed.price,
+    };
+  });
+
+  if (outcomes.some((outcome) => outcome === null)) {
+    return null;
+  }
+
+  return {
+    outcomes: outcomes as NormalizedOdds['outcomes'],
+    updatedAt: candidate.updatedAt,
+  };
+}
+
+function haveSameOutcomeSet(left: string[], right: string[]) {
+  if (left.length !== right.length) {
+    return false;
+  }
+
+  const rightSet = new Set(right.map((outcome) => normalizeOutcome(outcome)));
+  return left.every((outcome) => rightSet.has(normalizeOutcome(outcome)));
 }

@@ -7,6 +7,7 @@ import { logger } from '../logger.js';
 
 export type AuditAction =
   | 'CREATE_EVENT'
+  | 'UPDATE_EVENT'
   | 'LOCK_EVENT'
   | 'SETTLE_EVENT'
   | 'CANCEL_EVENT'

@@ -27,7 +27,11 @@ export function AdminLayout() {
     );
   }
 
-  if (!isAuthenticated || !user?.isAdmin) {
+  if (!isAuthenticated) {
+    return <Navigate to="/admin/login?redirect=%2Fadmin" replace />;
+  }
+
+  if (!user?.isAdmin) {
     return <Navigate to="/events" replace />;
   }
 

@@ -529,7 +529,10 @@ async function resolveEventOddsWithFallback(
 
   const updatedAtMs = getOddsUpdatedAtMs(event.oddsUpdatedAt, cachedOdds.updatedAt);
   const oddsAgeMs = Date.now() - updatedAtMs;
-  if (!Number.isFinite(oddsAgeMs) || oddsAgeMs > ODDS_STALENESS_THRESHOLD_MS) {
+  if (
+    shouldEnforceCachedOddsFreshness(event) &&
+    (!Number.isFinite(oddsAgeMs) || oddsAgeMs > ODDS_STALENESS_THRESHOLD_MS)
+  ) {
     throw new AppError(
       policy.staleCode as never,
       policy.staleMessage,
@@ -552,6 +555,10 @@ function getOddsUpdatedAtMs(oddsUpdatedAt: Date | null, fallbackUpdatedAt: strin
   }
 
   return new Date(fallbackUpdatedAt).getTime();
+}
+
+function shouldEnforceCachedOddsFreshness(event: EventOddsSnapshot): boolean {
+  return Boolean(event.externalSportKey && event.externalEventId);
 }
 
 async function persistEventOdds(
@@ -704,4 +711,8 @@ async function lockEventForCashout(
 
 export function calculateOddsDriftPercentForTest(previousOdds: number, latestOdds: number): number {
   return calculateOddsDriftPercent(previousOdds, latestOdds);
+}
+
+export function shouldEnforceCachedOddsFreshnessForTest(event: EventOddsSnapshot): boolean {
+  return shouldEnforceCachedOddsFreshness(event);
 }
