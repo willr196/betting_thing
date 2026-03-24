@@ -33,6 +33,8 @@ function createInMemoryStatus<T extends object>(initial: T): StatusStore<T> {
 }
 
 const SETTLEMENT_BATCH_SIZE = 100;
+const SCORE_LOOKBACK_DAYS = 3;
+const DAY_MS = 24 * 60 * 60 * 1000;
 
 export function createSettlementWorker(
   statusStore: StatusStore<SettlementStatus> = createInMemoryStatus<SettlementStatus>({})
@@ -64,13 +66,18 @@ export function createSettlementWorker(
         }
 
         const now = new Date();
+        const scoreWindowStart = new Date(now.getTime() - SCORE_LOOKBACK_DAYS * DAY_MS);
         const pendingEvents = await prisma.event.findMany({
           where: {
             status: 'LOCKED',
             externalSportKey: { not: null },
             externalEventId: { not: null },
-            startsAt: { lte: now },
+            startsAt: {
+              lte: now,
+              gte: scoreWindowStart,
+            },
           },
+          orderBy: { startsAt: 'desc' },
           // Bound the batch size to avoid unbounded transactions and API load
           take: SETTLEMENT_BATCH_SIZE,
         });
@@ -104,7 +111,12 @@ export function createSettlementWorker(
         for (const [sportKey, events] of eventsBySport.entries()) {
           let scores: OddsScore[];
           try {
-            scores = await OddsApiService.getScores(sportKey);
+            scores = await OddsApiService.getScores(sportKey, {
+              daysFrom: SCORE_LOOKBACK_DAYS,
+              eventIds: events.flatMap((event) =>
+                event.externalEventId ? [event.externalEventId] : []
+              ),
+            });
           } catch (error) {
             const message = error instanceof Error ? error.message : 'Unknown error';
             logger.error({ sportKey, err: error }, '[Settlement] Failed to fetch scores');

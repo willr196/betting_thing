@@ -87,4 +87,20 @@ describe('OddsApiService cache', () => {
     expect(eventOdds?.outcomes.length).toBeGreaterThan(0);
     expect(fetchMock).not.toHaveBeenCalled();
   });
+
+  it('includes the requested score lookback window and event ids in score requests', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(makeResponse([]));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await OddsApiService.getScores(SPORT_KEY, {
+      daysFrom: 3,
+      eventIds: ['event_2', SAMPLE_EVENT_ID],
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [requestUrl] = fetchMock.mock.calls[0] ?? [];
+    expect(requestUrl).toBe(
+      `${config.oddsApi.baseUrl}/sports/${SPORT_KEY}/scores?daysFrom=3&eventIds=event_2%2C${SAMPLE_EVENT_ID}&apiKey=${config.oddsApi.key}`
+    );
+  });
 });

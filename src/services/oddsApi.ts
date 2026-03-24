@@ -16,7 +16,7 @@ export interface OddsScore {
   id: string;
   sport_key: string;
   completed: boolean;
-  scores?: Array<{ name: string; score: string }>;
+  scores?: Array<{ name: string; score: string }> | null;
   home_team?: string;
   away_team?: string;
 }
@@ -46,6 +46,15 @@ type CacheEntry<T> = {
 const sportOddsCache = new Map<string, CacheEntry<SportOddsEvent[]>>();
 const scoresCache = new Map<string, CacheEntry<OddsScore[]>>();
 let remainingRequests: number | null = null;
+
+function getScoresCacheKey(
+  sportKey: string,
+  options: { daysFrom?: number; eventIds?: string[] }
+) {
+  const daysFrom = options.daysFrom ?? 1;
+  const eventIds = options.eventIds?.filter(Boolean).sort().join(',') ?? '';
+  return `${sportKey}|daysFrom=${daysFrom}|eventIds=${eventIds}`;
+}
 
 function buildUrl(path: string, params: Record<string, string | number | undefined>) {
   const url = new URL(`${BASE_URL}${path}`);
@@ -223,20 +232,28 @@ export const OddsApiService = {
     return normalizeEventOdds(event);
   },
 
-  async getScores(sportKey: string, options: { forceRefresh?: boolean } = {}): Promise<OddsScore[]> {
+  async getScores(
+    sportKey: string,
+    options: { forceRefresh?: boolean; daysFrom?: number; eventIds?: string[] } = {}
+  ): Promise<OddsScore[]> {
+    const cacheKey = getScoresCacheKey(sportKey, options);
+    const daysFrom = options.daysFrom ?? 1;
+    const eventIds = options.eventIds?.filter(Boolean);
+
     if (!options.forceRefresh) {
-      const cached = getCachedValue(scoresCache, sportKey);
+      const cached = getCachedValue(scoresCache, cacheKey);
       if (cached) {
         return cached;
       }
     }
 
     const url = buildUrl(`/sports/${sportKey}/scores`, {
-      daysFrom: 1,
+      daysFrom,
+      eventIds: eventIds && eventIds.length > 0 ? eventIds.join(',') : undefined,
     });
 
     const scores = await fetchOddsJson<OddsScore[]>(url, `/sports/${sportKey}/scores`);
-    setCachedValue(scoresCache, sportKey, scores, config.oddsApi.scoresCacheTtlMs);
+    setCachedValue(scoresCache, cacheKey, scores, config.oddsApi.scoresCacheTtlMs);
     return scores;
   },
 };
