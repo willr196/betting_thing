@@ -625,6 +625,42 @@ export const EventService = {
     return cancelled;
   },
 
+  /**
+   * Delete SETTLED and CANCELLED events older than `thresholdDays` days.
+   * Cleans up related predictions and accumulator legs in the same transaction.
+   * Ledger records (TokenTransaction, PointsTransaction) are preserved — they
+   * use soft references (referenceType/referenceId) so no FK constraint breaks.
+   */
+  async deleteOldFinishedEvents(thresholdDays = 2): Promise<number> {
+    const threshold = new Date(Date.now() - thresholdDays * 24 * 60 * 60 * 1000);
+
+    const oldEvents = await prisma.event.findMany({
+      where: {
+        status: { in: ['SETTLED', 'CANCELLED'] },
+        settledAt: { lt: threshold },
+      },
+      select: { id: true },
+    });
+
+    if (oldEvents.length === 0) return 0;
+
+    const eventIds = oldEvents.map((e) => e.id);
+
+    await prisma.$transaction(async (tx) => {
+      // Remove legs first; accumulator header rows remain but are orphaned below
+      await tx.accumulatorLeg.deleteMany({ where: { eventId: { in: eventIds } } });
+
+      // Delete accumulators that now have no legs at all
+      await tx.accumulator.deleteMany({ where: { legs: { none: {} } } });
+
+      await tx.prediction.deleteMany({ where: { eventId: { in: eventIds } } });
+
+      await tx.event.deleteMany({ where: { id: { in: eventIds } } });
+    });
+
+    return eventIds.length;
+  },
+
   async updateOdds(eventId: string, odds: NormalizedOdds) {
     return prisma.event.update({
       where: { id: eventId },

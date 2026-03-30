@@ -2,6 +2,7 @@ import { Router, type Request, type Response } from 'express';
 import { z } from 'zod';
 import rateLimit from 'express-rate-limit';
 import { AuthService } from '../services/auth.js';
+import { EmailService } from '../services/email.js';
 import { LedgerService } from '../services/ledger.js';
 import { TokenAllowanceService, getNextAllowanceRefillAt } from '../services/tokenAllowance.js';
 import { PointsLedgerService } from '../services/pointsLedger.js';
@@ -103,6 +104,34 @@ const changePasswordLimiter = rateLimit({
   legacyHeaders: false,
 });
 
+const forgotPasswordLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+  message: {
+    success: false,
+    error: {
+      code: 'RATE_LIMITED',
+      message: 'Too many password reset requests. Please try again later.',
+    },
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+const resetPasswordLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  message: {
+    success: false,
+    error: {
+      code: 'RATE_LIMITED',
+      message: 'Too many attempts. Please try again later.',
+    },
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
 // =============================================================================
 // VALIDATION SCHEMAS
 // =============================================================================
@@ -120,6 +149,15 @@ const loginSchema = z.object({
 const changePasswordSchema = z.object({
   currentPassword: z.string().min(1, 'Current password is required'),
   newPassword: passwordSchema,
+});
+
+const forgotPasswordSchema = z.object({
+  email: emailSchema,
+});
+
+const resetPasswordSchema = z.object({
+  token: z.string().min(1, 'Reset token is required'),
+  password: passwordSchema,
 });
 
 const transactionsQuerySchema = z.object({
@@ -363,6 +401,45 @@ router.get(
       },
       achievementProgress: achievementProgress.next,
     });
+  })
+);
+
+/**
+ * POST /auth/forgot-password
+ * Send a password reset email. Always returns 200 to prevent email enumeration.
+ */
+router.post(
+  '/forgot-password',
+  forgotPasswordLimiter,
+  validateBody(forgotPasswordSchema),
+  asyncHandler(async (req: Request, res: Response) => {
+    const { email } = req.body as { email: string };
+
+    try {
+      const { rawToken, userEmail } = await AuthService.createPasswordResetToken(email);
+      const frontendUrl = config.server.frontendUrl ?? 'http://localhost:5173';
+      const resetUrl = `${frontendUrl}/reset-password?token=${rawToken}`;
+      await EmailService.sendPasswordReset(userEmail, resetUrl);
+    } catch {
+      // Swallow all errors — never reveal whether the email exists
+    }
+
+    sendSuccess(res, { message: 'If an account with that email exists, a reset link has been sent.' });
+  })
+);
+
+/**
+ * POST /auth/reset-password
+ * Validate token and set a new password.
+ */
+router.post(
+  '/reset-password',
+  resetPasswordLimiter,
+  validateBody(resetPasswordSchema),
+  asyncHandler(async (req: Request, res: Response) => {
+    const { token, password } = req.body as { token: string; password: string };
+    await AuthService.resetPassword(token, password);
+    sendSuccess(res, { message: 'Password updated. You can now log in with your new password.' });
   })
 );
 

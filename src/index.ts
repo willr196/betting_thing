@@ -84,6 +84,14 @@ async function start(): Promise<void> {
         logger.error({ err: error }, '[Startup] Stale-event cleanup failed');
       });
 
+      EventService.deleteOldFinishedEvents().then((deleted) => {
+        if (deleted > 0) {
+          logger.info({ deleted }, '[Startup] Deleted old finished events (>2 days)');
+        }
+      }).catch((error) => {
+        logger.error({ err: error }, '[Startup] Old-event deletion failed');
+      });
+
       // Auto-import on startup only when OPEN inventory is low and quota allows.
       runStartupAutoImport().catch((error) => {
         logger.error({ err: error }, 'Startup auto-import failed');

@@ -148,9 +148,13 @@ export class ApiClient {
         }
       }
 
-      // 401 for other reasons — clear token
+      // 401 for other reasons (e.g. INVALID_CREDENTIALS) — pass through the real error
       this.setToken(null);
-      throw new ApiError('Session expired. Please log in again.', 'UNAUTHORIZED', 401);
+      throw new ApiError(
+        data.error?.message ?? 'Session expired. Please log in again.',
+        data.error?.code ?? 'UNAUTHORIZED',
+        401
+      );
     }
 
     // Handle non-401 error responses
@@ -226,6 +230,20 @@ export class ApiClient {
     } finally {
       this.isRefreshing = false;
     }
+  }
+
+  async forgotPassword(email: string): Promise<void> {
+    await this.request('/auth/forgot-password', {
+      method: 'POST',
+      body: JSON.stringify({ email }),
+    });
+  }
+
+  async resetPassword(token: string, password: string): Promise<void> {
+    await this.request('/auth/reset-password', {
+      method: 'POST',
+      body: JSON.stringify({ token, password }),
+    });
   }
 
   async logout(): Promise<void> {

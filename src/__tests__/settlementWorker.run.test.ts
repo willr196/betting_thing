@@ -4,12 +4,14 @@ const {
   eventFindManyMock,
   autoLockStartedEventsMock,
   cleanupStaleUnpredictedEventsMock,
+  deleteOldFinishedEventsMock,
   getScoresMock,
   settleMock,
 } = vi.hoisted(() => ({
   eventFindManyMock: vi.fn(),
   autoLockStartedEventsMock: vi.fn(),
   cleanupStaleUnpredictedEventsMock: vi.fn(),
+  deleteOldFinishedEventsMock: vi.fn(),
   getScoresMock: vi.fn(),
   settleMock: vi.fn(),
 }));
@@ -26,6 +28,7 @@ vi.mock('../services/events.js', () => ({
   EventService: {
     autoLockStartedEvents: autoLockStartedEventsMock,
     cleanupStaleUnpredictedEvents: cleanupStaleUnpredictedEventsMock,
+    deleteOldFinishedEvents: deleteOldFinishedEventsMock,
     settle: settleMock,
   },
 }));
@@ -46,6 +49,7 @@ describe('SettlementWorker.runOnce', () => {
 
     autoLockStartedEventsMock.mockResolvedValue(0);
     cleanupStaleUnpredictedEventsMock.mockResolvedValue(0);
+    deleteOldFinishedEventsMock.mockResolvedValue(0);
     getScoresMock.mockResolvedValue([]);
     eventFindManyMock.mockResolvedValue([
       {

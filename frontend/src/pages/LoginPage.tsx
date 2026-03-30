@@ -86,18 +86,28 @@ export function LoginPage() {
               autoFocus
             />
 
-            <Input
-              label="Password"
-              type="password"
-              value={password}
-              onChange={(e) => {
-                setPassword(e.target.value);
-                setPasswordError('');
-                setFormError('');
-              }}
-              placeholder="••••••••"
-              error={passwordError}
-            />
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-sm font-medium text-gray-700">Password</span>
+                <Link
+                  to="/forgot-password"
+                  className="text-sm text-primary-600 hover:underline"
+                >
+                  Forgot password?
+                </Link>
+              </div>
+              <Input
+                type="password"
+                value={password}
+                onChange={(e) => {
+                  setPassword(e.target.value);
+                  setPasswordError('');
+                  setFormError('');
+                }}
+                placeholder="••••••••"
+                error={passwordError}
+              />
+            </div>
 
             {formError && <p className="text-sm text-red-600">{formError}</p>}
 

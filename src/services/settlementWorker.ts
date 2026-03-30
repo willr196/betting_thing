@@ -65,6 +65,11 @@ export function createSettlementWorker(
           logger.info({ staleCancelled }, '[Settlement] Cancelled stale events with no predictions');
         }
 
+        const deletedOldEvents = await EventService.deleteOldFinishedEvents();
+        if (deletedOldEvents > 0) {
+          logger.info({ deletedOldEvents }, '[Settlement] Deleted old finished events (>2 days)');
+        }
+
         const now = new Date();
         const scoreWindowStart = new Date(now.getTime() - SCORE_LOOKBACK_DAYS * DAY_MS);
         const pendingEvents = await prisma.event.findMany({

@@ -7,6 +7,8 @@ import { Spinner } from './components/ui';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import {
   LoginPage,
+  ForgotPasswordPage,
+  ResetPasswordPage,
   AdminLoginPage,
   RegisterPage,
   EventsPage,
@@ -162,6 +164,24 @@ function AppRoutes() {
         }
       >
         <Route index element={<ErrorBoundary><LoginPage /></ErrorBoundary>} />
+      </Route>
+
+      <Route
+        path="/forgot-password"
+        element={
+          <PublicRoute>
+            <Layout />
+          </PublicRoute>
+        }
+      >
+        <Route index element={<ErrorBoundary><ForgotPasswordPage /></ErrorBoundary>} />
+      </Route>
+
+      <Route
+        path="/reset-password"
+        element={<Layout />}
+      >
+        <Route index element={<ErrorBoundary><ResetPasswordPage /></ErrorBoundary>} />
       </Route>
 
       <Route

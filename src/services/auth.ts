@@ -393,4 +393,82 @@ export const AuthService = {
   async comparePassword(password: string, hash: string): Promise<boolean> {
     return bcrypt.compare(password, hash);
   },
+
+  /**
+   * Create a password reset token for the given email.
+   * Returns the raw token (to embed in the email link) and the user's email.
+   * Throws NOT_FOUND if no account exists with that email.
+   */
+  async createPasswordResetToken(
+    email: string
+  ): Promise<{ rawToken: string; userEmail: string }> {
+    const user = await prisma.user.findUnique({
+      where: { email: email.toLowerCase() },
+      select: { id: true, email: true },
+    });
+
+    if (!user) {
+      throw new AppError('NOT_FOUND', 'No account found with that email address', 404);
+    }
+
+    const raw = randomBytes(32).toString('hex');
+    const hash = createHash('sha256').update(raw).digest('hex');
+    const expiresAt = new Date(
+      Date.now() + config.email.passwordResetExpiresMinutes * 60 * 1000
+    );
+
+    // Invalidate any existing reset tokens for this user first
+    await prisma.passwordResetToken.deleteMany({ where: { userId: user.id } });
+
+    await prisma.passwordResetToken.create({
+      data: { userId: user.id, tokenHash: hash, expiresAt },
+    });
+
+    return { rawToken: raw, userEmail: user.email };
+  },
+
+  /**
+   * Validate a password reset token and update the user's password.
+   * Marks the token as used so it cannot be replayed.
+   */
+  async resetPassword(rawToken: string, newPassword: string): Promise<void> {
+    const hash = createHash('sha256').update(rawToken).digest('hex');
+
+    const record = await prisma.passwordResetToken.findUnique({
+      where: { tokenHash: hash },
+    });
+
+    if (!record) {
+      throw new AppError('TOKEN_INVALID', 'Invalid or expired reset link', 400);
+    }
+
+    if (record.usedAt) {
+      throw new AppError('TOKEN_INVALID', 'This reset link has already been used', 400);
+    }
+
+    if (record.expiresAt < new Date()) {
+      await prisma.passwordResetToken.delete({ where: { id: record.id } });
+      throw new AppError('TOKEN_EXPIRED', 'This reset link has expired. Please request a new one.', 400);
+    }
+
+    const passwordHash = await bcrypt.hash(newPassword, config.auth.bcryptRounds);
+
+    await prisma.$transaction([
+      prisma.user.update({
+        where: { id: record.userId },
+        data: {
+          passwordHash,
+          tokenVersion: { increment: 1 },
+          refreshTokenHash: null,
+          refreshTokenExpiresAt: null,
+          failedLoginAttempts: 0,
+          loginLockoutUntil: null,
+        },
+      }),
+      prisma.passwordResetToken.update({
+        where: { id: record.id },
+        data: { usedAt: new Date() },
+      }),
+    ]);
+  },
 };

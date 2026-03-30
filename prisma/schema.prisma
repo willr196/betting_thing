@@ -59,8 +59,9 @@ model User {
   ownedLeagues      League[]            @relation("LeagueOwner")
   leagueMemberships LeagueMembership[]
   leagueStandings   LeagueStanding[]
-  accumulators      Accumulator[]
-  
+  accumulators        Accumulator[]
+  passwordResetTokens PasswordResetToken[]
+
   @@index([email])
   @@index([createdAt])
   @@index([loginLockoutUntil])
@@ -546,6 +547,25 @@ enum RedemptionStatus {
   PENDING    // Awaiting fulfilment
   FULFILLED  // Reward delivered to user
   CANCELLED  // Cancelled, points refunded
+}
+
+// =============================================================================
+// PASSWORD RESET TOKEN
+// =============================================================================
+// Single-use tokens for the forgot-password flow.
+// Token is stored hashed; the raw value is only ever sent by email.
+
+model PasswordResetToken {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
+  @@index([expiresAt])
 }
 
 // =============================================================================

@@ -102,6 +102,15 @@ const envSchema = z.object({
   AUTO_IMPORT_SPORTS: z.string().default('soccer_epl'),
   CASHOUT_STALENESS_THRESHOLD_MS: z.coerce.number().int().min(1).default(300000),
   CASHOUT_ODDS_DRIFT_THRESHOLD_PERCENT: z.coerce.number().min(0).max(100).default(5),
+
+  // Email (SMTP) — optional; if unset, reset emails are logged to console in dev
+  SMTP_HOST: z.string().optional(),
+  SMTP_PORT: z.coerce.number().default(587),
+  SMTP_SECURE: z.preprocess((v) => v === 'true' || v === true, z.boolean()).default(false),
+  SMTP_USER: z.string().optional(),
+  SMTP_PASS: z.string().optional(),
+  SMTP_FROM: z.string().default('no-reply@predictionplatform.com'),
+  PASSWORD_RESET_EXPIRES_MINUTES: z.coerce.number().int().min(5).default(60),
 });
 
 // Parse and validate environment
@@ -206,6 +215,15 @@ export const config = {
   cashout: {
     stalenessThresholdMs: env.CASHOUT_STALENESS_THRESHOLD_MS,
     oddsDriftThresholdPercent: env.CASHOUT_ODDS_DRIFT_THRESHOLD_PERCENT,
+  },
+  email: {
+    host: env.SMTP_HOST,
+    port: env.SMTP_PORT,
+    secure: env.SMTP_SECURE,
+    user: env.SMTP_USER,
+    pass: env.SMTP_PASS,
+    from: env.SMTP_FROM,
+    passwordResetExpiresMinutes: env.PASSWORD_RESET_EXPIRES_MINUTES,
   },
 } as const;
 
