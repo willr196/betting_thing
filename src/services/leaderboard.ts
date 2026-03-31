@@ -10,6 +10,8 @@ type RankedLeaderboardRow = {
   rank: number | bigint;
   userId: string;
   email: string;
+  displayName: string | null;
+  showPublicProfile: boolean;
   totalPredictions: number;
   wins: number;
   losses: number;
@@ -39,7 +41,7 @@ function toLeaderboardEntry(row: RankedLeaderboardRow) {
   return {
     rank: toNumber(row.rank),
     userId: row.userId,
-    displayName: anonymizeEmail(row.email),
+    displayName: formatDisplayName(row.email, row.displayName, row.showPublicProfile),
     totalPredictions: row.totalPredictions,
     wins: row.wins,
     losses: row.losses,
@@ -54,6 +56,18 @@ function anonymizeEmail(email: string): string {
   const localPart = email.split('@')[0] ?? email;
   const prefix = localPart.slice(0, 3);
   return `${prefix}***`;
+}
+
+function formatDisplayName(
+  email: string,
+  displayName: string | null,
+  showPublicProfile: boolean
+): string {
+  if (showPublicProfile && displayName) {
+    return displayName;
+  }
+
+  return anonymizeEmail(email);
 }
 
 function formatIsoWeekKey(date: Date): string {
@@ -178,6 +192,8 @@ async function findUserRank(
       SELECT
         lb."userId",
         u."email",
+        u."displayName",
+        u."showPublicProfile",
         lb."totalPredictions",
         lb."wins",
         lb."losses",
@@ -271,6 +287,8 @@ export const LeaderboardService = {
         SELECT
           lb."userId",
           u."email",
+          u."displayName",
+          u."showPublicProfile",
           lb."totalPredictions",
           lb."wins",
           lb."losses",

@@ -56,6 +56,18 @@ function anonymizeEmail(email: string): string {
   return `${localPart.slice(0, 3)}***`;
 }
 
+function formatDisplayName(
+  email: string,
+  displayName: string | null,
+  showPublicProfile: boolean
+): string {
+  if (showPublicProfile && displayName) {
+    return displayName;
+  }
+
+  return anonymizeEmail(email);
+}
+
 function coercePeriodKey(period: LeaguePeriod, periodKey?: string): string {
   if (period === 'ALL_TIME') {
     return 'all-time';
@@ -640,13 +652,22 @@ export const LeagueService = {
     await assertActiveMembership(leagueId, userId);
 
     const members = await prisma.$queryRaw<
-      Array<{ userId: string; role: 'OWNER' | 'MEMBER'; joinedAt: Date; email: string }>
+      Array<{
+        userId: string;
+        role: 'OWNER' | 'MEMBER';
+        joinedAt: Date;
+        email: string;
+        displayName: string | null;
+        showPublicProfile: boolean;
+      }>
     >`
       SELECT
         lm."userId",
         lm."role",
         lm."joinedAt",
-        u."email"
+        u."email",
+        u."displayName",
+        u."showPublicProfile"
       FROM "LeagueMembership" lm
       INNER JOIN "User" u ON u."id" = lm."userId"
       WHERE lm."leagueId" = ${leagueId} AND lm."isActive" = true
@@ -656,7 +677,11 @@ export const LeagueService = {
     return {
       members: members.map((member) => ({
         userId: member.userId,
-        displayName: anonymizeEmail(member.email),
+        displayName: formatDisplayName(
+          member.email,
+          member.displayName,
+          member.showPublicProfile
+        ),
         role: member.role,
         joinedAt: member.joinedAt,
       })),
@@ -684,6 +709,8 @@ export const LeagueService = {
         totalPredictions: number;
         updatedAt: Date;
         email: string;
+        displayName: string | null;
+        showPublicProfile: boolean;
       }>
     >`
       SELECT
@@ -694,7 +721,9 @@ export const LeagueService = {
         ls."predictionsLost",
         ls."totalPredictions",
         ls."updatedAt",
-        u."email"
+        u."email",
+        u."displayName",
+        u."showPublicProfile"
       FROM "LeagueStanding" ls
       INNER JOIN "User" u ON u."id" = ls."userId"
       WHERE
@@ -707,7 +736,7 @@ export const LeagueService = {
     const standings = rows.map((row) => ({
       rank: row.rank,
       userId: row.userId,
-      displayName: anonymizeEmail(row.email),
+      displayName: formatDisplayName(row.email, row.displayName, row.showPublicProfile),
       pointsEarned: row.pointsEarned,
       predictionsWon: row.predictionsWon,
       predictionsLost: row.predictionsLost,

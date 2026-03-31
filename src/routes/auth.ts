@@ -1,4 +1,4 @@
-import { Router, type Request, type Response } from 'express';
+import { Router, type NextFunction, type Request, type Response } from 'express';
 import { z } from 'zod';
 import rateLimit from 'express-rate-limit';
 import { AuthService } from '../services/auth.js';
@@ -118,6 +118,20 @@ const forgotPasswordLimiter = rateLimit({
   legacyHeaders: false,
 });
 
+const profileUpdateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  message: {
+    success: false,
+    error: {
+      code: 'RATE_LIMITED',
+      message: 'Too many profile update attempts. Please try again later.',
+    },
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
 const resetPasswordLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 10,
@@ -131,6 +145,59 @@ const resetPasswordLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
 });
+
+function getRequestOrigin(req: Request): string | null {
+  const originHeader = req.headers.origin;
+  if (typeof originHeader === 'string' && originHeader.length > 0) {
+    return originHeader;
+  }
+
+  const refererHeader = req.headers.referer;
+  if (typeof refererHeader !== 'string' || refererHeader.length === 0) {
+    return null;
+  }
+
+  try {
+    return new URL(refererHeader).origin;
+  } catch {
+    return null;
+  }
+}
+
+function shouldEnforceTrustedFrontendOrigin(): boolean {
+  if (!config.server.frontendUrl) {
+    return false;
+  }
+
+  if (!config.isTest) {
+    return true;
+  }
+
+  // Route-level tests can opt into the real browser-origin policy without
+  // changing the wider NODE_ENV=test behavior for the rest of the suite.
+  return process.env.ENFORCE_TRUSTED_FRONTEND_ORIGIN_IN_TEST === 'true';
+}
+
+function requireTrustedFrontendOrigin(req: Request, res: Response, next: NextFunction): void {
+  if (!shouldEnforceTrustedFrontendOrigin()) {
+    next();
+    return;
+  }
+
+  const requestOrigin = getRequestOrigin(req);
+  if (requestOrigin === config.server.frontendUrl) {
+    next();
+    return;
+  }
+
+  res.status(403).json({
+    success: false,
+    error: {
+      code: 'FORBIDDEN',
+      message: 'Untrusted request origin',
+    },
+  });
+}
 
 // =============================================================================
 // VALIDATION SCHEMAS
@@ -160,6 +227,37 @@ const resetPasswordSchema = z.object({
   password: passwordSchema,
 });
 
+const displayNameSchema = z.union([
+  z
+    .string()
+    .trim()
+    .min(2, 'Display name must be at least 2 characters')
+    .max(32, 'Display name must be 32 characters or fewer')
+    .regex(/^[A-Za-z0-9 _.-]+$/, 'Display name can only use letters, numbers, spaces, dots, dashes, and underscores'),
+  z.null(),
+]);
+
+const updateProfileSchema = z.object({
+  email: emailSchema.optional(),
+  currentPassword: z.string().min(1, 'Current password is required').optional(),
+  displayName: displayNameSchema.optional(),
+  showPublicProfile: z.boolean().optional(),
+}).refine(
+  (value) =>
+    value.email !== undefined ||
+    value.displayName !== undefined ||
+    value.showPublicProfile !== undefined,
+  {
+    message: 'At least one profile field is required',
+  }
+).refine(
+  (value) => value.email === undefined || !!value.currentPassword,
+  {
+    path: ['currentPassword'],
+    message: 'Current password is required to change your email',
+  }
+);
+
 const transactionsQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(50),
   offset: z.coerce.number().int().min(0).default(0),
@@ -176,6 +274,7 @@ const transactionsQuerySchema = z.object({
 router.post(
   '/register',
   registerLimiter,
+  requireTrustedFrontendOrigin,
   validateBody(registerSchema),
   asyncHandler(async (req: Request, res: Response) => {
     const { email, password } = req.body;
@@ -192,6 +291,7 @@ router.post(
 router.post(
   '/login',
   loginLimiter,
+  requireTrustedFrontendOrigin,
   validateBody(loginSchema),
   asyncHandler(async (req: Request, res: Response) => {
     const { email, password } = req.body;
@@ -208,6 +308,7 @@ router.post(
 router.post(
   '/refresh',
   refreshLimiter,
+  requireTrustedFrontendOrigin,
   asyncHandler(async (req: Request, res: Response) => {
     const rawToken = req.cookies?.[REFRESH_COOKIE] as string | undefined;
 
@@ -231,6 +332,7 @@ router.post(
  */
 router.post(
   '/logout',
+  requireTrustedFrontendOrigin,
   asyncHandler(async (req: Request, res: Response) => {
     // Best-effort revocation — works with or without auth header
     const rawToken = req.cookies?.[REFRESH_COOKIE] as string | undefined;
@@ -244,6 +346,21 @@ router.post(
     }
     clearRefreshCookie(res);
     sendSuccess(res, { message: 'Logged out successfully' });
+  })
+);
+
+/**
+ * POST /auth/logout-all
+ * Revoke all sessions for the current user, including the current device.
+ */
+router.post(
+  '/logout-all',
+  requireAuth,
+  asyncHandler(async (req: Request, res: Response) => {
+    const { userId } = getAuthUser(req);
+    await AuthService.revokeAllTokens(userId);
+    clearRefreshCookie(res);
+    sendSuccess(res, { message: 'Logged out of all sessions successfully' });
   })
 );
 
@@ -266,6 +383,22 @@ router.get(
       return;
     }
 
+    sendSuccess(res, { user });
+  })
+);
+
+/**
+ * PATCH /auth/profile
+ * Update profile details and public-profile visibility.
+ */
+router.patch(
+  '/profile',
+  profileUpdateLimiter,
+  requireAuth,
+  validateBody(updateProfileSchema),
+  asyncHandler(async (req: Request, res: Response) => {
+    const { userId } = getAuthUser(req);
+    const user = await AuthService.updateProfile(userId, req.body);
     sendSuccess(res, { user });
   })
 );

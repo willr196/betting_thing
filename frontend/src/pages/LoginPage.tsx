@@ -141,8 +141,9 @@ export function LoginPage() {
         {import.meta.env.DEV && (
           <div className="mt-6 p-4 bg-gray-100 rounded-lg text-sm text-gray-600">
             <p className="font-medium mb-2">Seeded accounts (dev only):</p>
-            <p>Admin: wrobb@vergoltd.com / Arsenal!996_</p>
-            <p>User: test@example.com / Arsenal!996_</p>
+            <p>Admin email comes from <code>SEED_ADMIN_EMAIL</code>.</p>
+            <p>User email comes from <code>SEED_USER_EMAIL</code>.</p>
+            <p>Password comes from <code>SEED_PASSWORD</code>.</p>
           </div>
         )}
       </div>

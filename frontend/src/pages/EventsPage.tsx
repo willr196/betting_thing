@@ -120,7 +120,7 @@ export function EventsPage() {
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <h2 className="text-xl font-bold">
-                Hey {user.email.split('@')[0]}!
+                Hey {user.displayName?.trim() || user.email.split('@')[0]}!
               </h2>
               <div className="mt-2 flex flex-wrap items-center gap-3 text-sm">
                 <span className="flex items-center gap-1">

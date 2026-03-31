@@ -14,6 +14,7 @@ import { logger } from './logger.js';
 // =============================================================================
 
 const app = express();
+app.disable('x-powered-by');
 
 // -----------------------------------------------------------------------------
 // Security Middleware
@@ -130,6 +131,12 @@ app.use((req, res, next) => {
 // -----------------------------------------------------------------------------
 // API Routes
 // -----------------------------------------------------------------------------
+
+app.use('/api/v1', (_req, res, next) => {
+  res.setHeader('Cache-Control', 'no-store');
+  res.setHeader('Pragma', 'no-cache');
+  next();
+});
 
 app.use('/api/v1', routes);
 

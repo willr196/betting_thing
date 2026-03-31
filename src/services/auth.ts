@@ -381,6 +381,86 @@ export const AuthService = {
   },
 
   /**
+   * Update profile fields that power account/settings surfaces.
+   * Email changes require the current password; display preferences do not.
+   */
+  async updateProfile(
+    userId: string,
+    data: {
+      email?: string;
+      currentPassword?: string;
+      displayName?: string | null;
+      showPublicProfile?: boolean;
+    }
+  ): Promise<SafeUser> {
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+    });
+
+    if (!user) {
+      throw AppError.notFound('User');
+    }
+
+    const updateData: Prisma.UserUpdateInput = {};
+
+    if (data.displayName !== undefined) {
+      updateData.displayName = data.displayName ? data.displayName.trim() : null;
+    }
+
+    if (data.showPublicProfile !== undefined) {
+      updateData.showPublicProfile = data.showPublicProfile;
+    }
+
+    if (data.email !== undefined) {
+      const normalizedEmail = normalizeEmailKey(data.email);
+
+      if (!data.currentPassword) {
+        throw AppError.badRequest('Current password is required to change your email');
+      }
+
+      const isValidPassword = await bcrypt.compare(data.currentPassword, user.passwordHash);
+      if (!isValidPassword) {
+        throw new AppError('INVALID_CREDENTIALS', 'Current password is incorrect', 401);
+      }
+
+      if (normalizedEmail !== user.email) {
+        const existingUser = await prisma.user.findUnique({
+          where: { email: normalizedEmail },
+          select: { id: true },
+        });
+
+        if (existingUser && existingUser.id !== userId) {
+          throw new AppError('ALREADY_EXISTS', 'User with this email already exists', 409);
+        }
+
+        updateData.email = normalizedEmail;
+      }
+    }
+
+    if (Object.keys(updateData).length === 0) {
+      return toSafeUser(user);
+    }
+
+    try {
+      const updatedUser = await prisma.user.update({
+        where: { id: userId },
+        data: updateData,
+      });
+
+      return toSafeUser(updatedUser);
+    } catch (error) {
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2002'
+      ) {
+        throw new AppError('ALREADY_EXISTS', 'User with this email already exists', 409);
+      }
+
+      throw error;
+    }
+  },
+
+  /**
    * Hash a password (utility for admin operations).
    */
   async hashPassword(password: string): Promise<string> {

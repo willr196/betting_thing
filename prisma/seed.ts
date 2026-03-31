@@ -1,12 +1,13 @@
 import { PrismaClient } from '@prisma/client';
 import bcrypt from 'bcryptjs';
+import { randomBytes } from 'node:crypto';
 
 const prisma = new PrismaClient();
 const MS_IN_DAY = 24 * 60 * 60 * 1000;
-const SEEDED_ADMIN_EMAIL = 'wrobb@vergoltd.com';
+const SEEDED_ADMIN_EMAIL = (process.env.SEED_ADMIN_EMAIL?.trim().toLowerCase() || 'admin@example.com');
 const LEGACY_ADMIN_EMAIL = 'admin@example.com';
-const SEEDED_USER_EMAIL = 'test@example.com';
-const SEEDED_PASSWORD = 'Arsenal!996_';
+const SEEDED_USER_EMAIL = (process.env.SEED_USER_EMAIL?.trim().toLowerCase() || 'user@example.com');
+const SEEDED_PASSWORD = process.env.SEED_PASSWORD?.trim() || randomBytes(12).toString('base64url');
 
 function getStartOfISOWeek(date: Date): Date {
   const day = date.getUTCDay() || 7;
@@ -257,8 +258,9 @@ async function main() {
 
   console.log('\n🎉 Seeding complete!\n');
   console.log('Baseline Accounts:');
-  console.log(`  Admin: ${SEEDED_ADMIN_EMAIL} / ${SEEDED_PASSWORD}`);
-  console.log(`  User:  ${SEEDED_USER_EMAIL} / ${SEEDED_PASSWORD}`);
+  console.log(`  Admin email: ${SEEDED_ADMIN_EMAIL}`);
+  console.log(`  User email:  ${SEEDED_USER_EMAIL}`);
+  console.log(`  Password:    ${SEEDED_PASSWORD}`);
 }
 
 main()

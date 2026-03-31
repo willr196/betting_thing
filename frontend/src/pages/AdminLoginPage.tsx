@@ -91,7 +91,7 @@ export function AdminLoginPage() {
                 setEmailError('');
                 setFormError('');
               }}
-              placeholder="wrobb@vergoltd.com"
+              placeholder="admin@example.com"
               error={emailError}
               autoFocus
             />
@@ -134,7 +134,8 @@ export function AdminLoginPage() {
         {import.meta.env.DEV && (
           <div className="mt-6 rounded-lg bg-gray-100 p-4 text-sm text-gray-600">
             <p className="mb-2 font-medium">Seeded admin account (dev only):</p>
-            <p>wrobb@vergoltd.com / Arsenal!996_</p>
+            <p>Email comes from <code>SEED_ADMIN_EMAIL</code>.</p>
+            <p>Password comes from <code>SEED_PASSWORD</code>.</p>
           </div>
         )}
       </div>

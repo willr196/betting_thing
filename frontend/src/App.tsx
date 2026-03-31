@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { AccountSettingsProvider } from './context/AccountSettingsContext';
 import { BetSlipProvider } from './context/BetSlipContext';
 import { ToastProvider } from './context/ToastContext';
 import { Layout } from './components/Layout';
@@ -21,6 +22,7 @@ import {
   WalletPage,
   PromotionsPage,
   MinigamesPage,
+  SettingsPage,
   LeaguesPage,
   LeagueDetailPage,
   LeagueSettingsPage,
@@ -240,6 +242,7 @@ function AppRoutes() {
         <Route path="minigames" element={<ErrorBoundary><MinigamesPage /></ErrorBoundary>} />
         <Route path="transactions" element={<ErrorBoundary><TransactionsPage /></ErrorBoundary>} />
         <Route path="wallet" element={<ErrorBoundary><WalletPage /></ErrorBoundary>} />
+        <Route path="settings" element={<ErrorBoundary><SettingsPage /></ErrorBoundary>} />
       </Route>
 
       {/* Admin routes */}
@@ -273,11 +276,13 @@ export default function App() {
     <BrowserRouter>
       <ErrorBoundary>
         <AuthProvider>
-          <ToastProvider>
-            <BetSlipProvider>
-              <AppRoutes />
-            </BetSlipProvider>
-          </ToastProvider>
+          <AccountSettingsProvider>
+            <ToastProvider>
+              <BetSlipProvider>
+                <AppRoutes />
+              </BetSlipProvider>
+            </ToastProvider>
+          </AccountSettingsProvider>
         </AuthProvider>
       </ErrorBoundary>
     </BrowserRouter>

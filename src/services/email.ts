@@ -46,7 +46,21 @@ export const EmailService = {
     const transport = createTransport();
 
     if (!transport) {
-      logger.info({ toEmail, resetUrl }, '[DEV] Password reset email (SMTP not configured)');
+      let resetOrigin: string | null = null;
+      try {
+        resetOrigin = new URL(resetUrl).origin;
+      } catch {
+        resetOrigin = null;
+      }
+
+      logger.info(
+        {
+          toEmail,
+          resetOrigin,
+          expiresInMinutes: config.email.passwordResetExpiresMinutes,
+        },
+        '[DEV] Password reset requested (SMTP not configured)'
+      );
       return;
     }
 

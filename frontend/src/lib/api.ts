@@ -47,7 +47,12 @@ type StorageLike = {
   removeItem(key: string): void;
 };
 
-function getDefaultStorage(): StorageLike | null {
+type StorageBundle = {
+  tokenStorage: StorageLike | null;
+  hintStorage: StorageLike | null;
+};
+
+function getLocalStorage(): StorageLike | null {
   if (typeof window === 'undefined') {
     return null;
   }
@@ -55,45 +60,77 @@ function getDefaultStorage(): StorageLike | null {
   return window.localStorage ?? null;
 }
 
+function getSessionStorage(): StorageLike | null {
+  if (typeof window === 'undefined') {
+    return null;
+  }
+
+  return window.sessionStorage ?? null;
+}
+
+function getDefaultStorageBundle(): StorageBundle {
+  const tokenStorage = getSessionStorage() ?? getLocalStorage();
+  const hintStorage = getLocalStorage() ?? getSessionStorage();
+
+  return {
+    tokenStorage,
+    hintStorage,
+  };
+}
+
+function isStorageBundle(
+  value: StorageLike | StorageBundle | null
+): value is StorageBundle {
+  return value !== null && typeof value === 'object' && 'tokenStorage' in value;
+}
+
 export class ApiClient {
   private token: string | null = null;
-  private storage: StorageLike | null;
+  private tokenStorage: StorageLike | null;
+  private hintStorage: StorageLike | null;
   private isRefreshing = false;
 
-  constructor(storage: StorageLike | null = getDefaultStorage()) {
-    this.storage = storage;
+  constructor(storage: StorageLike | StorageBundle | null = getDefaultStorageBundle()) {
+    if (isStorageBundle(storage)) {
+      this.tokenStorage = storage.tokenStorage;
+      this.hintStorage = storage.hintStorage;
+      return;
+    }
+
+    this.tokenStorage = storage;
+    this.hintStorage = storage;
   }
 
   setToken(token: string | null) {
     this.token = token;
-    if (!this.storage) {
+    if (!this.tokenStorage) {
       return;
     }
 
     if (token) {
-      this.storage.setItem('token', token);
+      this.tokenStorage.setItem('token', token);
     } else {
-      this.storage.removeItem('token');
+      this.tokenStorage.removeItem('token');
     }
   }
 
   getToken(): string | null {
-    if (!this.token && this.storage) {
-      this.token = this.storage.getItem('token');
+    if (!this.token && this.tokenStorage) {
+      this.token = this.tokenStorage.getItem('token');
     }
     return this.token;
   }
 
   hasSessionHint(): boolean {
-    return this.storage?.getItem(SESSION_HINT_KEY) === '1';
+    return this.hintStorage?.getItem(SESSION_HINT_KEY) === '1';
   }
 
   private markSessionHint() {
-    this.storage?.setItem(SESSION_HINT_KEY, '1');
+    this.hintStorage?.setItem(SESSION_HINT_KEY, '1');
   }
 
   private clearSessionHint() {
-    this.storage?.removeItem(SESSION_HINT_KEY);
+    this.hintStorage?.removeItem(SESSION_HINT_KEY);
   }
 
   private async request<T>(
@@ -259,6 +296,34 @@ export class ApiClient {
 
   async getMe(): Promise<{ user: User }> {
     return this.request<{ user: User }>('/auth/me');
+  }
+
+  async updateProfile(data: {
+    email?: string;
+    currentPassword?: string;
+    displayName?: string | null;
+    showPublicProfile?: boolean;
+  }): Promise<{ user: User }> {
+    return this.request<{ user: User }>('/auth/profile', {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async changePassword(currentPassword: string, newPassword: string): Promise<{ message: string }> {
+    return this.request<{ message: string }>('/auth/change-password', {
+      method: 'POST',
+      body: JSON.stringify({ currentPassword, newPassword }),
+    });
+  }
+
+  async logoutAll(): Promise<{ message: string }> {
+    const data = await this.request<{ message: string }>('/auth/logout-all', {
+      method: 'POST',
+    });
+    this.clearSessionHint();
+    this.setToken(null);
+    return data;
   }
 
   async getBalance(): Promise<{ balance: number; verified: boolean }> {

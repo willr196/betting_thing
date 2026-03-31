@@ -1,0 +1,3 @@
+ALTER TABLE "User"
+ADD COLUMN "displayName" VARCHAR(32),
+ADD COLUMN "showPublicProfile" BOOLEAN NOT NULL DEFAULT false;

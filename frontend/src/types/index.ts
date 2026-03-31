@@ -24,10 +24,12 @@ export interface ApiResponse<T = unknown> {
 export interface User {
   id: string;
   email: string;
+  displayName: string | null;
   tokenBalance: number;
   pointsBalance: number;
   isAdmin: boolean;
   isVerified: boolean;
+  showPublicProfile: boolean;
   createdAt: string;
   updatedAt: string;
 }

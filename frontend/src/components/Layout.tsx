@@ -1,6 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom';
+import { useAccountSettings } from '../context/AccountSettingsContext';
 import { useAuth } from '../context/AuthContext';
+import { useToast } from '../context/ToastContext';
 import { api } from '../lib/api';
 import { formatTokens, formatPoints } from '../lib/utils';
 import { BetSlip } from './BetSlip';
@@ -12,9 +14,16 @@ import { Button } from './ui';
 
 export function Layout() {
   const { user, isAuthenticated, logout } = useAuth();
+  const { preferences } = useAccountSettings();
+  const { info } = useToast();
   const navigate = useNavigate();
   const [streakCount, setStreakCount] = useState(0);
   const [leagueCount, setLeagueCount] = useState(0);
+  const reminderToastRef = useRef(info);
+
+  useEffect(() => {
+    reminderToastRef.current = info;
+  }, [info]);
 
   useEffect(() => {
     let isCancelled = false;
@@ -72,10 +81,35 @@ export function Layout() {
     };
   }, [isAuthenticated, user?.id]);
 
-  const handleLogout = () => {
-    logout();
-    navigate('/login');
+  useEffect(() => {
+    if (!isAuthenticated || preferences.sessionReminderMinutes <= 0) {
+      return;
+    }
+
+    const intervalId = window.setInterval(() => {
+      reminderToastRef.current(
+        'Session reminder: take a break or sign out if you are finished.',
+        7000
+      );
+    }, preferences.sessionReminderMinutes * 60 * 1000);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, [isAuthenticated, preferences.sessionReminderMinutes]);
+
+  const handleLogout = async () => {
+    await logout();
+    navigate('/login', { replace: true });
   };
+
+  const displayName = user?.displayName?.trim() || user?.email;
+  const tokenBalanceLabel = preferences.hideHeaderBalances
+    ? 'Hidden'
+    : formatTokens(user?.tokenBalance ?? 0);
+  const pointsBalanceLabel = preferences.hideHeaderBalances
+    ? 'Hidden'
+    : formatPoints(user?.pointsBalance ?? 0);
 
   return (
     <div className="min-h-screen">
@@ -121,6 +155,7 @@ export function Layout() {
                     <NavItemSecondary to="/rewards">Rewards</NavItemSecondary>
                     <NavItemSecondary to="/promotions">Promotions</NavItemSecondary>
                     <NavItemSecondary to="/minigames">Minigames</NavItemSecondary>
+                    <NavItemSecondary to="/settings">Settings</NavItemSecondary>
 
                     {user?.isAdmin && (
                       <>
@@ -149,7 +184,7 @@ export function Layout() {
                       >
                         <span className="mr-1 text-lg">🪙</span>
                         <span className="font-semibold text-primary-700">
-                          {formatTokens(user?.tokenBalance ?? 0)}
+                          {tokenBalanceLabel}
                         </span>
                       </Link>
                       <Link
@@ -158,7 +193,7 @@ export function Layout() {
                       >
                         <span className="mr-1 text-lg">🏆</span>
                         <span className="font-semibold text-emerald-700">
-                          {formatPoints(user?.pointsBalance ?? 0)}
+                          {pointsBalanceLabel}
                         </span>
                       </Link>
                       {streakCount >= 2 && (
@@ -171,8 +206,19 @@ export function Layout() {
 
                     {/* User actions */}
                     <div className="flex items-center gap-2">
-                      <span className="hidden text-sm text-gray-500 sm:block">{user?.email}</span>
-                      <Button variant="ghost" size="sm" onClick={handleLogout}>
+                      <Link
+                        to="/settings"
+                        className="hidden rounded-full px-3 py-2 text-sm text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-900 sm:block"
+                      >
+                        {displayName}
+                      </Link>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => {
+                          void handleLogout();
+                        }}
+                      >
                         Logout
                       </Button>
                     </div>
@@ -209,6 +255,7 @@ export function Layout() {
                   <MobileNavItem to="/promotions">Promotions</MobileNavItem>
                   <MobileNavItem to="/minigames">Minigames</MobileNavItem>
                   <MobileNavItem to="/wallet">Wallet</MobileNavItem>
+                  <MobileNavItem to="/settings">Settings</MobileNavItem>
                   {user?.isAdmin && <MobileNavItem to="/admin">Admin</MobileNavItem>}
                 </>
               ) : (
