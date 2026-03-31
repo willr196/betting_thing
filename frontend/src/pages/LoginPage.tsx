@@ -140,9 +140,9 @@ export function LoginPage() {
 
         {import.meta.env.DEV && (
           <div className="mt-6 p-4 bg-gray-100 rounded-lg text-sm text-gray-600">
-            <p className="font-medium mb-2">Test accounts (dev only):</p>
-            <p>Admin: admin@example.com / Admin123!</p>
-            <p>User: test@example.com / Test123!</p>
+            <p className="font-medium mb-2">Seeded accounts (dev only):</p>
+            <p>Admin: wrobb@vergoltd.com / Arsenal!996_</p>
+            <p>User: test@example.com / Arsenal!996_</p>
           </div>
         )}
       </div>

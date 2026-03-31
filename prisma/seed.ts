@@ -3,6 +3,10 @@ import bcrypt from 'bcryptjs';
 
 const prisma = new PrismaClient();
 const MS_IN_DAY = 24 * 60 * 60 * 1000;
+const SEEDED_ADMIN_EMAIL = 'wrobb@vergoltd.com';
+const LEGACY_ADMIN_EMAIL = 'admin@example.com';
+const SEEDED_USER_EMAIL = 'test@example.com';
+const SEEDED_PASSWORD = 'Arsenal!996_';
 
 function getStartOfISOWeek(date: Date): Date {
   const day = date.getUTCDay() || 7;
@@ -24,13 +28,41 @@ function getSeedAllowance(date: Date): { amount: number; lastResetDate: Date } {
 async function main() {
   console.log('🌱 Seeding database...\n');
 
+  const adminPassword = await bcrypt.hash(SEEDED_PASSWORD, 10);
+  const legacyAdmin =
+    SEEDED_ADMIN_EMAIL === LEGACY_ADMIN_EMAIL
+      ? null
+      : await prisma.user.findUnique({
+          where: { email: LEGACY_ADMIN_EMAIL },
+          select: { id: true },
+        });
+  const existingSeededAdmin = await prisma.user.findUnique({
+    where: { email: SEEDED_ADMIN_EMAIL },
+    select: { id: true },
+  });
+
+  if (legacyAdmin && !existingSeededAdmin) {
+    await prisma.user.update({
+      where: { id: legacyAdmin.id },
+      data: {
+        email: SEEDED_ADMIN_EMAIL,
+        passwordHash: adminPassword,
+        isAdmin: true,
+        isVerified: true,
+      },
+    });
+  }
+
   // Create admin user
-  const adminPassword = await bcrypt.hash('Admin123!', 10);
   const admin = await prisma.user.upsert({
-    where: { email: 'admin@example.com' },
-    update: {},
+    where: { email: SEEDED_ADMIN_EMAIL },
+    update: {
+      passwordHash: adminPassword,
+      isAdmin: true,
+      isVerified: true,
+    },
     create: {
-      email: 'admin@example.com',
+      email: SEEDED_ADMIN_EMAIL,
       passwordHash: adminPassword,
       tokenBalance: 0,
       pointsBalance: 0,
@@ -75,12 +107,16 @@ async function main() {
   });
 
   // Create test user
-  const testPassword = await bcrypt.hash('Test123!', 10);
+  const testPassword = await bcrypt.hash(SEEDED_PASSWORD, 10);
   const testUser = await prisma.user.upsert({
-    where: { email: 'test@example.com' },
-    update: {},
+    where: { email: SEEDED_USER_EMAIL },
+    update: {
+      passwordHash: testPassword,
+      isAdmin: false,
+      isVerified: true,
+    },
     create: {
-      email: 'test@example.com',
+      email: SEEDED_USER_EMAIL,
       passwordHash: testPassword,
       tokenBalance: 0,
       pointsBalance: 0,
@@ -220,9 +256,9 @@ async function main() {
   }
 
   console.log('\n🎉 Seeding complete!\n');
-  console.log('Test Accounts:');
-  console.log('  Admin: admin@example.com / Admin123!');
-  console.log('  User:  test@example.com / Test123!');
+  console.log('Baseline Accounts:');
+  console.log(`  Admin: ${SEEDED_ADMIN_EMAIL} / ${SEEDED_PASSWORD}`);
+  console.log(`  User:  ${SEEDED_USER_EMAIL} / ${SEEDED_PASSWORD}`);
 }
 
 main()

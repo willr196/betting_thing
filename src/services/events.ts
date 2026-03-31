@@ -631,7 +631,7 @@ export const EventService = {
    * Ledger records (TokenTransaction, PointsTransaction) are preserved — they
    * use soft references (referenceType/referenceId) so no FK constraint breaks.
    */
-  async deleteOldFinishedEvents(thresholdDays = 2): Promise<number> {
+  async deleteOldFinishedEvents(thresholdDays = 1): Promise<number> {
     const threshold = new Date(Date.now() - thresholdDays * 24 * 60 * 60 * 1000);
 
     const oldEvents = await prisma.event.findMany({

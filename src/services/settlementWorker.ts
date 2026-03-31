@@ -67,7 +67,7 @@ export function createSettlementWorker(
 
         const deletedOldEvents = await EventService.deleteOldFinishedEvents();
         if (deletedOldEvents > 0) {
-          logger.info({ deletedOldEvents }, '[Settlement] Deleted old finished events (>2 days)');
+          logger.info({ deletedOldEvents }, '[Settlement] Deleted old finished events (>1 day)');
         }
 
         const now = new Date();

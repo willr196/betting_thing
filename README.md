@@ -50,12 +50,12 @@ npm run db:seed
 npm run dev
 ```
 
-### Test Accounts (after seeding)
+### Baseline Accounts (after seeding)
 
-| Role  | Email              | Password   |
-|-------|--------------------|------------|
-| Admin | admin@example.com  | Admin123!  |
-| User  | test@example.com   | Test123!   |
+| Role  | Email               | Password      |
+|-------|---------------------|---------------|
+| Admin | wrobb@vergoltd.com  | Arsenal!996_  |
+| User  | test@example.com    | Arsenal!996_  |
 
 ---
 

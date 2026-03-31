@@ -86,7 +86,7 @@ async function start(): Promise<void> {
 
       EventService.deleteOldFinishedEvents().then((deleted) => {
         if (deleted > 0) {
-          logger.info({ deleted }, '[Startup] Deleted old finished events (>2 days)');
+          logger.info({ deleted }, '[Startup] Deleted old finished events (>1 day)');
         }
       }).catch((error) => {
         logger.error({ err: error }, '[Startup] Old-event deletion failed');
