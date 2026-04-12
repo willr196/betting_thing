@@ -8,16 +8,21 @@ type MockResponse = Response & {
 };
 
 function createMockResponse(): MockResponse {
-  const response = {
+  const response: {
+    body: unknown;
+    statusCode: number;
+    status(code: number): MockResponse;
+    json(payload: unknown): MockResponse;
+  } = {
     statusCode: 200,
     body: undefined,
     status(code: number) {
       this.statusCode = code;
-      return this;
+      return this as MockResponse;
     },
     json(payload: unknown) {
       this.body = payload;
-      return this;
+      return this as MockResponse;
     },
   };
 
