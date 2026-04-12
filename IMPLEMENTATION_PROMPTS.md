@@ -9,7 +9,7 @@ Use these prompts sequentially in Claude Code sessions. After each session, run 
 
 ### Context
 
-You are working on **betting_thing**, a token-based sports prediction platform. Stack: TypeScript/Node.js/Express backend (Railway), PostgreSQL via Prisma, React/Vite/Tailwind frontend (Vercel).
+You are working on **betting_thing**, a token-based sports prediction platform. Stack: TypeScript/Node.js/Express backend (Render web service), PostgreSQL via Prisma (Render managed Postgres), React/Vite/Tailwind frontend (Render static site).
 
 **Hard constraints (never violate):**
 - Ledger-first: `TokenTransaction` and `PointsTransaction` are immutable append-only. Balances derived, never directly mutated.
@@ -115,7 +115,7 @@ This page shows a unified view of all token and points movements.
 
 ### Context
 
-You are working on **betting_thing**, a token-based sports prediction platform. Stack: TypeScript/Node.js/Express backend (Railway), PostgreSQL via Prisma, React/Vite/Tailwind frontend (Vercel).
+You are working on **betting_thing**, a token-based sports prediction platform. Stack: TypeScript/Node.js/Express backend (Render web service), PostgreSQL via Prisma (Render managed Postgres), React/Vite/Tailwind frontend (Render static site).
 
 **Hard constraints (never violate):**
 - Ledger-first: `TokenTransaction` and `PointsTransaction` are immutable append-only.
@@ -265,7 +265,7 @@ router.get('/odds/quota', async (_req, res, next) => {
 
 ### Context
 
-You are working on **betting_thing**, a token-based sports prediction platform. Stack: TypeScript/Node.js/Express backend (Railway), PostgreSQL via Prisma, React/Vite/Tailwind frontend (Vercel). SSE (Server-Sent Events) infrastructure already exists for live updates.
+You are working on **betting_thing**, a token-based sports prediction platform. Stack: TypeScript/Node.js/Express backend (Render web service), PostgreSQL via Prisma (Render managed Postgres), React/Vite/Tailwind frontend (Render static site). SSE (Server-Sent Events) infrastructure already exists for live updates.
 
 **Hard constraints (never violate):**
 - Ledger-first: `TokenTransaction` and `PointsTransaction` are immutable append-only.
@@ -352,7 +352,7 @@ For each: if the backend exists but frontend doesn't, create the frontend page/c
 
 ### Context
 
-You are working on **betting_thing**, a token-based sports prediction platform. Stack: TypeScript/Node.js/Express backend (Railway), PostgreSQL via Prisma, React/Vite/Tailwind frontend (Vercel).
+You are working on **betting_thing**, a token-based sports prediction platform. Stack: TypeScript/Node.js/Express backend (Render web service), PostgreSQL via Prisma (Render managed Postgres), React/Vite/Tailwind frontend (Render static site).
 
 **Hard constraints (never violate):**
 - Ledger-first: `TokenTransaction` and `PointsTransaction` are immutable append-only.
@@ -521,7 +521,7 @@ export const logger = {
 
 ### Context
 
-You are working on **betting_thing**, a token-based sports prediction platform. Stack: TypeScript/Node.js/Express backend (Railway), PostgreSQL via Prisma, React/Vite/Tailwind frontend (Vercel).
+You are working on **betting_thing**, a token-based sports prediction platform. Stack: TypeScript/Node.js/Express backend (Render web service), PostgreSQL via Prisma (Render managed Postgres), React/Vite/Tailwind frontend (Render static site).
 
 **Hard constraints (never violate):**
 - Ledger-first: `TokenTransaction` and `PointsTransaction` are immutable append-only.

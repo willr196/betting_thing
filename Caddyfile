@@ -10,7 +10,7 @@
     # Route API requests to the Express backend
     handle /api/* {
         reverse_proxy api:3000
-    }/mo
+    }
 
     # Route everything else to the nginx frontend
     handle {

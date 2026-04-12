@@ -29,7 +29,7 @@ services:
       DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL in .env.production}
       FRONTEND_URL: ${FRONTEND_URL:?set FRONTEND_URL in .env.production}
       JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env.production}
-      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-7d}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-15m}
       BCRYPT_SALT_ROUNDS: ${BCRYPT_SALT_ROUNDS:-12}
       SIGNUP_BONUS_TOKENS: ${SIGNUP_BONUS_TOKENS:-0}
       WEEKLY_START_TOKENS: ${WEEKLY_START_TOKENS:-5}
@@ -45,6 +45,12 @@ services:
       THE_ODDS_API_MARKETS: ${THE_ODDS_API_MARKETS:-h2h}
       ODDS_SYNC_INTERVAL_SECONDS: ${ODDS_SYNC_INTERVAL_SECONDS:-300}
       SETTLEMENT_INTERVAL_SECONDS: ${SETTLEMENT_INTERVAL_SECONDS:-300}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_SECURE: ${SMTP_SECURE:-false}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      SMTP_FROM: ${SMTP_FROM:-no-reply@predictionplatform.com}
     expose:
       - "3000"
     healthcheck:

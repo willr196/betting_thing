@@ -5,8 +5,7 @@
 Token-based sports prediction platform. Users stake free daily tokens on outcomes and earn points for wins/cashouts. No real-money flows.
 
 - Stack: TypeScript, Node.js, Express, PostgreSQL (Prisma), React/Vite frontend
-- Backend deploy: Railway
-- Frontend deploy: Vercel
+- Deploy: Render (render.yaml Blueprint — API web service + static site + managed Postgres)
 - Odds provider: The Odds API (free tier target: 500/month)
 
 ## Core Architecture Rules
@@ -136,7 +135,7 @@ Token-based sports prediction platform. Users stake free daily tokens on outcome
 
 Enable one of the following for production resilience:
 
-1. Railway managed backups (recommended): configure automated backup cadence and retention in Railway Postgres settings.
+1. Render-managed backups/snapshots (recommended): configure automated backup cadence and retention on the Render Postgres service.
 2. External `pg_dump` cron: run scheduled dumps to durable object storage (S3-compatible) with tested restore procedure.
 
 Do not treat this as optional before scaling user traffic.
@@ -144,7 +143,7 @@ Do not treat this as optional before scaling user traffic.
 ### Security and Operations
 
 - Keep `JWT_SECRET` strong and non-placeholder in production.
-- Do not quote env var values in Railway when editing config.
+- Do not wrap Render env var values in extra quotes when editing config.
 - Keep Odds API usage budget-aware; every request counts toward monthly quota.
 
 ## Remaining Work Items

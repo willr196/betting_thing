@@ -1,0 +1,152 @@
+# render.yaml — Render Blueprint
+# Deploys: PostgreSQL database + API web service + React static site
+#
+# Setup:
+#   1. Push this repo to GitHub
+#   2. Go to render.com → New → Blueprint → select this repo
+#   3. After services are created, fill in the sync:false env vars below
+#      in the Render dashboard (Settings → Environment)
+#
+# Vars marked sync:false must be set manually:
+#   - prediction-api-fresh:  THE_ODDS_API_KEY, FRONTEND_URL, SMTP_HOST, SMTP_USER, SMTP_PASS, SMTP_FROM
+#   - prediction-frontend-fresh: VITE_API_URL  (e.g. https://prediction-api-fresh.onrender.com/api/v1)
+
+services:
+  # ---------------------------------------------------------------------------
+  # API — Node/Express via Docker
+  # ---------------------------------------------------------------------------
+  - type: web
+    name: prediction-api-fresh
+    env: docker
+    dockerfilePath: ./Dockerfile.api.prod
+    dockerContext: .
+    plan: starter
+    healthCheckPath: /api/v1/health/live
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: prediction-db-fresh
+          property: connectionString
+      # Generate a strong random JWT secret automatically
+      - key: JWT_SECRET
+        generateValue: true
+      # Set this to your frontend URL after the static site is deployed
+      # e.g. https://prediction-frontend-fresh.onrender.com
+      - key: FRONTEND_URL
+        sync: false
+      - key: JWT_EXPIRES_IN
+        value: 15m
+      - key: REFRESH_TOKEN_EXPIRES_DAYS
+        value: "30"
+      - key: BCRYPT_SALT_ROUNDS
+        value: "12"
+      - key: TRUST_PROXY
+        value: "1"
+      # Token economy
+      - key: SIGNUP_BONUS_TOKENS
+        value: "0"
+      - key: WEEKLY_START_TOKENS
+        value: "5"
+      - key: DAILY_ALLOWANCE_TOKENS
+        value: "1"
+      - key: MAX_ALLOWANCE_TOKENS
+        value: "11"
+      - key: MIN_STAKE_AMOUNT
+        value: "1"
+      - key: MAX_STAKE_AMOUNT
+        value: "11"
+      # Rate limiting
+      - key: RATE_LIMIT_MAX
+        value: "100"
+      - key: RATE_LIMIT_WINDOW_MINUTES
+        value: "15"
+      - key: LOGIN_LOCKOUT_MAX_ATTEMPTS
+        value: "5"
+      - key: LOGIN_LOCKOUT_WINDOW_MINUTES
+        value: "15"
+      # The Odds API — set your key in the Render dashboard
+      - key: THE_ODDS_API_KEY
+        sync: false
+      - key: THE_ODDS_API_REGIONS
+        value: uk
+      - key: THE_ODDS_API_MARKETS
+        value: h2h
+      - key: THE_ODDS_API_BASE_URL
+        value: https://api.the-odds-api.com/v4
+      - key: ODDS_SYNC_INTERVAL_SECONDS
+        value: "300"
+      - key: SETTLEMENT_INTERVAL_SECONDS
+        value: "300"
+      - key: ODDS_SYNC_LOOKAHEAD_HOURS
+        value: "48"
+      - key: ODDS_CACHE_TTL_SECONDS
+        value: "300"
+      - key: ODDS_SCORES_CACHE_TTL_SECONDS
+        value: "120"
+      - key: ODDS_STALENESS_THRESHOLD_MINUTES
+        value: "30"
+      - key: ODDS_API_MONTHLY_QUOTA
+        value: "500"
+      - key: EVENT_IMPORT_INTERVAL_SECONDS
+        value: "21600"
+      - key: AUTO_IMPORT_SPORTS
+        value: soccer_epl
+      - key: CASHOUT_STALENESS_THRESHOLD_MS
+        value: "300000"
+      - key: CASHOUT_ODDS_DRIFT_THRESHOLD_PERCENT
+        value: "5"
+      # Email (SMTP) — set in dashboard for password reset to work
+      - key: SMTP_HOST
+        sync: false
+      - key: SMTP_PORT
+        value: "587"
+      - key: SMTP_SECURE
+        value: "false"
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASS
+        sync: false
+      - key: SMTP_FROM
+        sync: false
+      - key: PASSWORD_RESET_EXPIRES_MINUTES
+        value: "60"
+
+  # ---------------------------------------------------------------------------
+  # Frontend — Vite/React static site
+  # ---------------------------------------------------------------------------
+  - type: web
+    name: prediction-frontend-fresh
+    env: static
+    rootDir: frontend
+    buildCommand: npm ci && npm run build
+    staticPublishPath: ./dist
+    autoDeploy: true
+    routes:
+      # SPA fallback — all paths serve index.html
+      - type: rewrite
+        source: /*
+        destination: /index.html
+    headers:
+      - path: /*
+        name: X-Frame-Options
+        value: DENY
+      - path: /*
+        name: X-Content-Type-Options
+        value: nosniff
+      - path: /assets/*
+        name: Cache-Control
+        value: public, max-age=31536000, immutable
+    envVars:
+      # Set to your API service URL after it's deployed
+      # e.g. https://prediction-api-fresh.onrender.com/api/v1
+      - key: VITE_API_URL
+        sync: false
+
+databases:
+  - name: prediction-db-fresh
+    plan: free
+    databaseName: prediction_platform
+    user: prediction
