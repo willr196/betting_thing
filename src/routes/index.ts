@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { sendSuccess } from '../utils/index.js';
 import authRoutes from './auth.js';
 import eventRoutes from './events.js';
 import predictionRoutes from './predictions.js';
@@ -13,6 +14,16 @@ import leagueRoutes from './leagues.js';
 import accumulatorRoutes from './accumulators.js';
 
 const router = Router();
+
+router.get('/', (_req, res) => {
+  sendSuccess(res, {
+    name: 'Prediction Platform API',
+    version: '1.0.0',
+    status: 'running',
+    health: '/api/v1/health',
+    live: '/api/v1/health/live',
+  });
+});
 
 // API Routes
 router.use('/auth', authRoutes);
