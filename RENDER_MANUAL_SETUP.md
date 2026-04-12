@@ -36,6 +36,8 @@ In Render:
 
 Use the internal URL for the API service when the API and database are on Render in the same region.
 
+Do not use the internal URL from your local shell for Prisma CLI commands. If you run `npx prisma ...` from your laptop, workstation, or Codex shell, use the database's `External Database URL` instead. A bare host like `dpg-xxxxx` is Render's internal hostname and usually fails locally with `P1001`.
+
 ## 2. Create the API web service
 
 In Render:
@@ -78,6 +80,8 @@ THE_ODDS_API_KEY=<your real The Odds API key>
 
 Notes:
 
+- `DATABASE_URL` should be the Render Postgres internal URL on the Render API service itself.
+- If you run Prisma against production from your local machine, use the Render Postgres external URL for that command instead of reusing the service's internal URL.
 - `FRONTEND_URL` is required in production by this codebase.
 - `THE_ODDS_API_KEY` is required at startup by the API config.
 - You can leave all `SMTP_*` variables unset.
@@ -203,6 +207,26 @@ Check these first:
 - `JWT_SECRET` is not a placeholder
 - `FRONTEND_URL` is a full `https://...` URL
 - `THE_ODDS_API_KEY` is set and non-empty
+
+### Prisma CLI from local machine fails with `P1001`
+
+If Prisma cannot reach a host that looks like `dpg-xxxxx`, you are probably using the Render internal database URL from outside Render.
+
+Use the Render Postgres `External Database URL` when running Prisma locally:
+
+```sh
+DATABASE_URL="<External Database URL>" \
+npx prisma migrate resolve --rolled-back 20260408120000_add_refresh_tokens_and_audit_log --schema prisma/schema.prisma
+```
+
+Then run:
+
+```sh
+DATABASE_URL="<External Database URL>" \
+npx prisma migrate deploy --schema prisma/schema.prisma
+```
+
+Use the internal URL only inside the Render API service.
 
 ### Frontend builds but API calls fail
 
