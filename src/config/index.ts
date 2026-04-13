@@ -1,34 +1,27 @@
 import { z } from 'zod';
 import dotenv from 'dotenv';
 import { logger } from '../logger.js';
+import { normalizeEnvValue, normalizeProcessEnv } from './envUtils.js';
 
 // Keep platform-injected vars authoritative while still supporting local `.env` files.
-if (process.env.NODE_ENV !== 'production') {
+const rawNodeEnv = normalizeEnvValue(process.env.NODE_ENV, {
+  emptyStringAsUndefined: false,
+});
+
+if (rawNodeEnv !== 'production') {
   dotenv.config();
 }
 
-const stripWrappingQuotes = (value: unknown): unknown => {
-  if (typeof value !== 'string') {
-    return value;
-  }
+const normalizedEnv = normalizeProcessEnv(process.env, {
+  preserveEmptyKeys: ['NODE_ENV'],
+});
 
-  const trimmed = value.trim();
-
-  if (trimmed.length >= 2) {
-    const hasDoubleQuotes = trimmed.startsWith('"') && trimmed.endsWith('"');
-    const hasSingleQuotes = trimmed.startsWith("'") && trimmed.endsWith("'");
-
-    if (hasDoubleQuotes || hasSingleQuotes) {
-      return trimmed.slice(1, -1);
-    }
-  }
-
-  return trimmed;
-};
-
-const normalizedEnv = Object.fromEntries(
-  Object.entries(process.env).map(([key, value]) => [key, stripWrappingQuotes(value)])
-);
+if (normalizedEnv.NODE_ENV === '') {
+  logger.fatal(
+    'NODE_ENV is set to an empty string. Remove the blank override or set NODE_ENV=production in Render.'
+  );
+  process.exit(1);
+}
 
 // =============================================================================
 // ENVIRONMENT SCHEMA

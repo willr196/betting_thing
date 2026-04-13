@@ -24,6 +24,7 @@ services:
     healthCheckPath: /api/v1/health/live
     autoDeploy: true
     envVars:
+      # Keep this non-empty. A blank dashboard override replaces the Dockerfile default.
       - key: NODE_ENV
         value: production
       - key: DATABASE_URL

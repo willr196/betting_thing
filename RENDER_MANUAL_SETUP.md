@@ -84,6 +84,7 @@ Notes:
 - If you run Prisma against production from your local machine, use the Render Postgres external URL for that command instead of reusing the service's internal URL.
 - `FRONTEND_URL` is required in production by this codebase.
 - `THE_ODDS_API_KEY` is required at startup by the API config.
+- Do not leave `NODE_ENV` blank. On Render, an empty dashboard value overrides the Docker image's `NODE_ENV=production` and the API will fail at startup.
 - You can leave all `SMTP_*` variables unset.
 
 ### API environment variables: recommended to match `render.yaml`
@@ -128,6 +129,7 @@ PASSWORD_RESET_EXPIRES_MINUTES=60
 You do not need to set `SMTP_HOST`, `SMTP_USER`, `SMTP_PASS`, or `SMTP_FROM` unless you want password reset emails to work.
 
 Do not add them with blank values. Just leave them unset.
+The same rule applies to any optional env var on Render: blank values override image defaults and are not the same as "unset".
 
 ## 3. Create the frontend static site
 
