@@ -99,6 +99,11 @@ services:
         value: "300000"
       - key: CASHOUT_ODDS_DRIFT_THRESHOLD_PERCENT
         value: "5"
+      # Admin seeding — set these to create/update admin on next deploy, then remove them
+      - key: SEED_ADMIN_EMAIL
+        sync: false
+      - key: SEED_PASSWORD
+        sync: false
       # Email (SMTP) — set in dashboard for password reset to work
       - key: SMTP_HOST
         sync: false
