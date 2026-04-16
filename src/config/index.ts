@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import dotenv from 'dotenv';
 import { logger } from '../logger.js';
-import { normalizeEnvValue, normalizeProcessEnv } from './envUtils.js';
+import { normalizeEnvValue, normalizeProcessEnv, normalizeUrlOrigin } from './envUtils.js';
 
 // Keep platform-injected vars authoritative while still supporting local `.env` files.
 const rawNodeEnv = normalizeEnvValue(process.env.NODE_ENV, {
@@ -62,7 +62,7 @@ const envSchema = z.object({
   // Application
   PORT: z.coerce.number().default(3000),
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
-  FRONTEND_URL: z.string().url().optional(),
+  FRONTEND_URL: z.preprocess(normalizeUrlOrigin, z.string().url().optional()),
   TRUST_PROXY: trustProxySchema,
   
   // Token Economy

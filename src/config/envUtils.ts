@@ -50,3 +50,15 @@ export const normalizeProcessEnv = (
     ])
   );
 };
+
+export const normalizeUrlOrigin = (value: unknown): unknown => {
+  if (typeof value !== 'string') {
+    return value;
+  }
+
+  try {
+    return new URL(value).origin;
+  } catch {
+    return value;
+  }
+};

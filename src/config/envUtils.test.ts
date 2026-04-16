@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { normalizeEnvValue, normalizeProcessEnv } from './envUtils.js';
+import { normalizeEnvValue, normalizeProcessEnv, normalizeUrlOrigin } from './envUtils.js';
 
 describe('env normalization helpers', () => {
   it('trims values and removes wrapping quotes', () => {
@@ -38,5 +38,14 @@ describe('env normalization helpers', () => {
       SMTP_USER: undefined,
       FRONTEND_URL: 'https://frontend.example.com',
     });
+  });
+
+  it('normalizes frontend URLs down to their origin', () => {
+    expect(normalizeUrlOrigin('https://frontend.example.com/')).toBe(
+      'https://frontend.example.com'
+    );
+    expect(normalizeUrlOrigin('https://frontend.example.com/login?x=1')).toBe(
+      'https://frontend.example.com'
+    );
   });
 });

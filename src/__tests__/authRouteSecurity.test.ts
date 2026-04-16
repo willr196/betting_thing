@@ -2,6 +2,7 @@ import type { Request, RequestHandler, Router } from 'express';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const TRUSTED_ORIGIN = 'https://frontend.test';
+const TRUSTED_FRONTEND_URL_ENV = `${TRUSTED_ORIGIN}/login?source=render`;
 const UNTRUSTED_ORIGIN = 'https://attacker.test';
 const ORIGIN_OVERRIDE_ENV = 'ENFORCE_TRUSTED_FRONTEND_ORIGIN_IN_TEST';
 
@@ -195,7 +196,7 @@ describe('auth route trusted-origin security', () => {
     previousFrontendUrl = process.env.FRONTEND_URL;
     previousOriginOverride = process.env[ORIGIN_OVERRIDE_ENV];
 
-    process.env.FRONTEND_URL = TRUSTED_ORIGIN;
+    process.env.FRONTEND_URL = TRUSTED_FRONTEND_URL_ENV;
     process.env[ORIGIN_OVERRIDE_ENV] = 'true';
 
     authService = {
