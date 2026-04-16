@@ -925,6 +925,32 @@ export class ApiClient {
     });
   }
 
+  async promoteUser(userId: string): Promise<{ user: AdminUser }> {
+    return this.request<{ user: AdminUser }>(`/admin/users/${userId}/promote`, { method: 'POST' });
+  }
+
+  async demoteUser(userId: string): Promise<{ user: AdminUser }> {
+    return this.request<{ user: AdminUser }>(`/admin/users/${userId}/demote`, { method: 'POST' });
+  }
+
+  async bulkCreateEvents(events: Array<{
+    title: string;
+    description?: string;
+    startsAt: string;
+    outcomes: string[];
+    payoutMultiplier: number;
+    odds: Array<{ name: string; price: number }>;
+  }>): Promise<{ events: Event[]; count: number }> {
+    return this.request<{ events: Event[]; count: number }>('/admin/events/bulk', {
+      method: 'POST',
+      body: JSON.stringify({ events }),
+    });
+  }
+
+  async getStaleEvents(): Promise<{ events: AdminEvent[]; count: number }> {
+    return this.request<{ events: AdminEvent[]; count: number }>('/admin/events/stale');
+  }
+
   async verifyUserBalance(
     userId: string
   ): Promise<{ balance: { cached: number; calculated: number; discrepancy?: number } }> {

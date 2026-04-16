@@ -12,6 +12,7 @@ import { AuditLogService } from '../services/auditLog.js';
 import { LeagueStandingsService } from '../services/leagueStandings.js';
 import { requireAuth, requireAdmin, validateBody, validateParams, getAuthUser, idParamSchema, positiveIntSchema, futureDateSchema } from '../middleware/index.js';
 import { asyncHandler, parseLimitOffset, sendSuccess, AppError } from '../utils/index.js';
+import { ErrorCodes } from '../types/index.js';
 import { getSportByKey } from '../config/sports.js';
 
 const router = Router();
@@ -505,6 +506,57 @@ router.post(
 );
 
 // =============================================================================
+// BULK EVENT IMPORT
+// =============================================================================
+
+const bulkEventRowSchema = z.object({
+  title: z.string().min(1, 'Title is required').max(200),
+  description: z.string().max(2000).optional(),
+  startsAt: futureDateSchema,
+  outcomes: z.array(z.string().min(1)).min(2, 'At least 2 outcomes required'),
+  payoutMultiplier: z.number().min(1).max(10).default(2.0),
+  odds: manualOddsSchema.optional(),
+});
+
+const bulkEventsSchema = z.object({
+  events: z.array(bulkEventRowSchema).min(1).max(100),
+});
+
+/**
+ * POST /admin/events/bulk
+ * Bulk-create multiple events at once (e.g. imported from a spreadsheet).
+ */
+router.post(
+  '/events/bulk',
+  validateBody(bulkEventsSchema),
+  asyncHandler(async (req, res) => {
+    const { userId } = getAuthUser(req);
+    const { events: rows } = req.body as z.infer<typeof bulkEventsSchema>;
+
+    const created = await Promise.all(
+      rows.map((row) =>
+        EventService.create({
+          ...row,
+          startsAt: new Date(row.startsAt),
+          createdBy: userId,
+          detachFromExternalSource: true,
+        })
+      )
+    );
+
+    await AuditLogService.log({
+      adminId: userId,
+      action: 'BULK_CREATE_EVENTS',
+      targetType: 'EVENT',
+      targetId: 'bulk',
+      details: { count: created.length, titles: created.map((e) => e.title) },
+    });
+
+    sendSuccess(res, { events: created, count: created.length }, 201);
+  })
+);
+
+// =============================================================================
 // USER MANAGEMENT
 // =============================================================================
 
@@ -542,6 +594,74 @@ router.get(
     ]);
 
     sendSuccess(res, { users, total });
+  })
+);
+
+/**
+ * POST /admin/users/:id/promote
+ * Promote a user to admin.
+ */
+router.post(
+  '/users/:id/promote',
+  validateParams(idParamSchema),
+  asyncHandler(async (req, res) => {
+    const { userId: adminId } = getAuthUser(req);
+    const targetId = req.params.id as string;
+
+    const user = await prisma.user.findUnique({ where: { id: targetId } });
+    if (!user) throw AppError.notFound('User');
+    if (user.isAdmin) throw new AppError(ErrorCodes.CONFLICT, 'User is already an admin', 400);
+
+    const updated = await prisma.user.update({
+      where: { id: targetId },
+      data: { isAdmin: true, isVerified: true },
+      select: { id: true, email: true, isAdmin: true, isVerified: true, tokenBalance: true, pointsBalance: true, createdAt: true, _count: { select: { predictions: true, redemptions: true } } },
+    });
+
+    await AuditLogService.log({
+      adminId,
+      action: 'PROMOTE_USER',
+      targetType: 'USER',
+      targetId,
+      details: { email: user.email },
+    });
+
+    sendSuccess(res, { user: updated });
+  })
+);
+
+/**
+ * POST /admin/users/:id/demote
+ * Remove admin role from a user.
+ */
+router.post(
+  '/users/:id/demote',
+  validateParams(idParamSchema),
+  asyncHandler(async (req, res) => {
+    const { userId: adminId } = getAuthUser(req);
+    const targetId = req.params.id as string;
+
+    if (adminId === targetId) throw new AppError(ErrorCodes.FORBIDDEN, 'Cannot demote yourself', 400);
+
+    const user = await prisma.user.findUnique({ where: { id: targetId } });
+    if (!user) throw AppError.notFound('User');
+    if (!user.isAdmin) throw new AppError(ErrorCodes.INVALID_INPUT, 'User is not an admin', 400);
+
+    const updated = await prisma.user.update({
+      where: { id: targetId },
+      data: { isAdmin: false },
+      select: { id: true, email: true, isAdmin: true, isVerified: true, tokenBalance: true, pointsBalance: true, createdAt: true, _count: { select: { predictions: true, redemptions: true } } },
+    });
+
+    await AuditLogService.log({
+      adminId,
+      action: 'DEMOTE_USER',
+      targetType: 'USER',
+      targetId,
+      details: { email: user.email },
+    });
+
+    sendSuccess(res, { user: updated });
   })
 );
 

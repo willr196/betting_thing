@@ -18,7 +18,10 @@ export type AuditAction =
   | 'CREDIT_TOKENS'
   | 'REPAIR_BALANCE'
   | 'TRIGGER_SETTLEMENT'
-  | 'TRIGGER_ODDS_SYNC';
+  | 'TRIGGER_ODDS_SYNC'
+  | 'BULK_CREATE_EVENTS'
+  | 'PROMOTE_USER'
+  | 'DEMOTE_USER';
 
 export type AuditTargetType = 'EVENT' | 'USER' | 'REDEMPTION' | 'REWARD' | 'SYSTEM';
 

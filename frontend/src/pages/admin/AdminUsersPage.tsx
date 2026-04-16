@@ -75,6 +75,32 @@ export function AdminUsersPage() {
     }
   };
 
+  const handlePromote = async (userId: string) => {
+    setActionLoading(userId + '-promote');
+    try {
+      const result = await api.promoteUser(userId);
+      toast.success(`${result.user.email} is now an admin`);
+      loadData();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to promote user');
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleDemote = async (userId: string) => {
+    setActionLoading(userId + '-demote');
+    try {
+      const result = await api.demoteUser(userId);
+      toast.success(`${result.user.email} admin access removed`);
+      loadData();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to demote user');
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
   const handleCreditTokens = async (userId: string) => {
     const amount = parseInt(creditAmount, 10);
     if (!amount || amount <= 0) {
@@ -147,6 +173,8 @@ export function AdminUsersPage() {
                     onVerify={() => handleVerifyBalance(user.id)}
                     onRepair={() => handleRepairBalance(user.id)}
                     onCredit={() => handleCreditTokens(user.id)}
+                    onPromote={() => handlePromote(user.id)}
+                    onDemote={() => handleDemote(user.id)}
                     creditAmount={creditAmount}
                     onCreditAmountChange={setCreditAmount}
                     creditDesc={creditDesc}
@@ -196,6 +224,8 @@ function UserRow({
   onVerify,
   onRepair,
   onCredit,
+  onPromote,
+  onDemote,
   creditAmount,
   onCreditAmountChange,
   creditDesc,
@@ -208,6 +238,8 @@ function UserRow({
   onVerify: () => void;
   onRepair: () => void;
   onCredit: () => void;
+  onPromote: () => void;
+  onDemote: () => void;
   creditAmount: string;
   onCreditAmountChange: (v: string) => void;
   creditDesc: string;
@@ -242,10 +274,7 @@ function UserRow({
                   variant="secondary"
                   size="sm"
                   isLoading={actionLoading === user.id + '-verify'}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onVerify();
-                  }}
+                  onClick={(e) => { e.stopPropagation(); onVerify(); }}
                 >
                   Verify Balance
                 </Button>
@@ -253,13 +282,29 @@ function UserRow({
                   variant="secondary"
                   size="sm"
                   isLoading={actionLoading === user.id + '-repair'}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onRepair();
-                  }}
+                  onClick={(e) => { e.stopPropagation(); onRepair(); }}
                 >
                   Repair Balance
                 </Button>
+                {user.isAdmin ? (
+                  <Button
+                    variant="danger"
+                    size="sm"
+                    isLoading={actionLoading === user.id + '-demote'}
+                    onClick={(e) => { e.stopPropagation(); onDemote(); }}
+                  >
+                    Remove Admin
+                  </Button>
+                ) : (
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    isLoading={actionLoading === user.id + '-promote'}
+                    onClick={(e) => { e.stopPropagation(); onPromote(); }}
+                  >
+                    Make Admin
+                  </Button>
+                )}
               </div>
 
               <div

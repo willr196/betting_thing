@@ -29,6 +29,61 @@ const STATUS_COLORS: Record<EventStatus, string> = {
 
 const PAGE_SIZE = 20;
 
+// ---------------------------------------------------------------------------
+// Bulk import helpers
+// ---------------------------------------------------------------------------
+
+type BulkRow = {
+  title: string;
+  startsAt: string;
+  outcomes: string[];
+  odds: number[];
+  description: string;
+  error?: string;
+};
+
+function parseBulkPaste(text: string): BulkRow[] {
+  return text
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .filter((line) => !line.startsWith('#'))
+    .map((line) => {
+      // Support both tab (Google Sheets paste) and comma separated
+      const sep = line.includes('\t') ? '\t' : ',';
+      const cols = line.split(sep).map((c) => c.trim().replace(/^"|"$/g, ''));
+      // Expected columns: Title | Date (YYYY-MM-DD or DD/MM/YYYY) | Time (HH:MM) | Outcomes (pipe-sep) | Odds (pipe-sep) | Description?
+      const [titleRaw = '', dateRaw = '', timeRaw = '', outcomesRaw = '', oddsRaw = '', descRaw = ''] = cols;
+
+      const title = titleRaw.trim();
+      if (!title) return { title: '', startsAt: '', outcomes: [], odds: [], description: '', error: 'Missing title' };
+
+      // Parse date — accept YYYY-MM-DD or DD/MM/YYYY
+      let isoDate = dateRaw.trim();
+      if (/^\d{2}\/\d{2}\/\d{4}$/.test(isoDate)) {
+        const [d, m, y] = isoDate.split('/');
+        isoDate = `${y}-${m}-${d}`;
+      }
+      const time = timeRaw.trim() || '12:00';
+      const startsAt = `${isoDate}T${time}:00`;
+      if (isNaN(new Date(startsAt).getTime())) {
+        return { title, startsAt: '', outcomes: [], odds: [], description: '', error: `Invalid date: "${dateRaw} ${timeRaw}"` };
+      }
+
+      const outcomes = outcomesRaw.split('|').map((o) => o.trim()).filter(Boolean);
+      if (outcomes.length < 2) {
+        return { title, startsAt, outcomes, odds: [], description: '', error: 'Need at least 2 outcomes (pipe-separated)' };
+      }
+
+      const odds = oddsRaw.split('|').map((o) => parseFloat(o.trim()));
+      if (odds.length !== outcomes.length || odds.some((o) => !isFinite(o) || o <= 1)) {
+        return { title, startsAt, outcomes, odds, description: '', error: 'Odds must match outcomes count and each be > 1' };
+      }
+
+      return { title, startsAt, outcomes, odds, description: descRaw.trim() };
+    });
+}
+
 type EventFormRow = {
   id: string;
   name: string;
@@ -70,6 +125,11 @@ export function AdminEventsPage() {
   const [editingEvent, setEditingEvent] = useState<AdminEvent | null>(null);
   const [editorLoading, setEditorLoading] = useState(false);
   const [form, setForm] = useState<EventFormState>(createEmptyEventForm);
+  const [showBulkImport, setShowBulkImport] = useState(false);
+  const [bulkPasteText, setBulkPasteText] = useState('');
+  const [bulkPreview, setBulkPreview] = useState<BulkRow[] | null>(null);
+  const [bulkLoading, setBulkLoading] = useState(false);
+  const [staleCount, setStaleCount] = useState(0);
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -88,6 +148,38 @@ export function AdminEventsPage() {
   useEffect(() => {
     void loadData();
   }, [loadData]);
+
+  useEffect(() => {
+    api.getStaleEvents().then((r) => setStaleCount(r.count)).catch(() => {});
+  }, []);
+
+  const handleBulkImport = async () => {
+    if (!bulkPreview) return;
+    const valid = bulkPreview.filter((r) => !r.error);
+    if (!valid.length) return;
+    setBulkLoading(true);
+    try {
+      const result = await api.bulkCreateEvents(
+        valid.map((r) => ({
+          title: r.title,
+          description: r.description || undefined,
+          startsAt: new Date(r.startsAt).toISOString(),
+          outcomes: r.outcomes,
+          payoutMultiplier: 2.0,
+          odds: r.outcomes.map((name, i) => ({ name, price: r.odds[i] })),
+        }))
+      );
+      toast.success(`Created ${result.count} events`);
+      setShowBulkImport(false);
+      setBulkPasteText('');
+      setBulkPreview(null);
+      await loadData();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Bulk import failed');
+    } finally {
+      setBulkLoading(false);
+    }
+  };
 
   const totalPages = Math.ceil(total / PAGE_SIZE);
   const currentPage = Math.floor(offset / PAGE_SIZE) + 1;
@@ -241,9 +333,14 @@ export function AdminEventsPage() {
             odds feed.
           </p>
         </div>
-        <Button size="sm" onClick={openCreateEditor}>
-          Create Local Event
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="secondary" size="sm" onClick={() => setShowBulkImport(true)}>
+            Bulk Import
+          </Button>
+          <Button size="sm" onClick={openCreateEditor}>
+            Create Event
+          </Button>
+        </div>
       </div>
 
       <Card className="bg-slate-900 text-white">
@@ -262,6 +359,18 @@ export function AdminEventsPage() {
           </p>
         </div>
       </Card>
+
+      {staleCount > 0 && (
+        <div className="flex items-center gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          <span className="font-semibold">{staleCount} locked {staleCount === 1 ? 'event' : 'events'} not yet settled</span>
+          <button
+            className="ml-auto text-amber-700 underline"
+            onClick={() => handleFilterChange('LOCKED')}
+          >
+            View locked
+          </button>
+        </div>
+      )}
 
       <div className="flex flex-wrap gap-2">
         {STATUS_FILTERS.map((filter) => (
@@ -486,6 +595,97 @@ export function AdminEventsPage() {
                 {editingEvent ? 'Save Changes' : 'Create Event'}
               </Button>
             </div>
+          </Card>
+        </div>
+      )}
+
+      {showBulkImport && (
+        <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4">
+          <Card className="my-8 w-full max-w-4xl bg-white">
+            <div className="mb-4 flex items-start justify-between gap-4">
+              <div>
+                <h2 className="text-lg font-semibold text-gray-900">Bulk Import Events</h2>
+                <p className="mt-1 text-sm text-gray-500">
+                  Paste rows directly from Google Sheets or enter CSV. One event per line.
+                </p>
+              </div>
+              <Button variant="ghost" size="sm" onClick={() => { setShowBulkImport(false); setBulkPreview(null); setBulkPasteText(''); }}>
+                Close
+              </Button>
+            </div>
+
+            <div className="mb-3 rounded-lg border border-gray-200 bg-gray-50 p-3 text-xs text-gray-500 font-mono">
+              <p className="mb-1 font-semibold text-gray-600">Format (columns separated by Tab or comma):</p>
+              <p>Title | Date (YYYY-MM-DD or DD/MM/YYYY) | Time (HH:MM) | Outcomes (pipe-separated) | Odds (pipe-separated) | Description (optional)</p>
+              <p className="mt-2 text-gray-400">Example:</p>
+              <p>Arsenal vs Chelsea	2026-05-10	15:00	Arsenal Win|Draw|Chelsea Win	2.10|3.40|3.80	Premier League</p>
+            </div>
+
+            <textarea
+              className="mb-3 block w-full rounded-lg border border-gray-300 px-3 py-2 font-mono text-sm text-gray-800 focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500"
+              rows={8}
+              placeholder="Paste from Google Sheets or type CSV rows here..."
+              value={bulkPasteText}
+              onChange={(e) => { setBulkPasteText(e.target.value); setBulkPreview(null); }}
+            />
+
+            <div className="flex gap-2 mb-4">
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => setBulkPreview(parseBulkPaste(bulkPasteText))}
+                disabled={!bulkPasteText.trim()}
+              >
+                Preview
+              </Button>
+            </div>
+
+            {bulkPreview && (
+              <>
+                <div className="mb-4 overflow-x-auto rounded-lg border border-gray-200">
+                  <table className="w-full text-left text-xs">
+                    <thead>
+                      <tr className="border-b border-gray-200 bg-gray-50 text-gray-500 uppercase tracking-wide">
+                        <th className="px-3 py-2">Title</th>
+                        <th className="px-3 py-2">Starts At</th>
+                        <th className="px-3 py-2">Outcomes</th>
+                        <th className="px-3 py-2">Odds</th>
+                        <th className="px-3 py-2">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {bulkPreview.map((row, i) => (
+                        <tr key={i} className={`border-b border-gray-100 ${row.error ? 'bg-red-50' : 'bg-white'}`}>
+                          <td className="px-3 py-2 font-medium text-gray-900">{row.title || '—'}</td>
+                          <td className="px-3 py-2 text-gray-600">{row.startsAt ? new Date(row.startsAt).toLocaleString() : '—'}</td>
+                          <td className="px-3 py-2 text-gray-600">{row.outcomes.join(', ') || '—'}</td>
+                          <td className="px-3 py-2 text-gray-600">{row.odds.join(', ') || '—'}</td>
+                          <td className="px-3 py-2">
+                            {row.error
+                              ? <span className="text-red-600 font-medium">{row.error}</span>
+                              : <span className="text-green-600 font-medium">OK</span>
+                            }
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <div className="flex items-center justify-between">
+                  <p className="text-sm text-gray-500">
+                    {bulkPreview.filter((r) => !r.error).length} valid / {bulkPreview.length} total
+                  </p>
+                  <Button
+                    size="sm"
+                    isLoading={bulkLoading}
+                    disabled={!bulkPreview.some((r) => !r.error)}
+                    onClick={() => void handleBulkImport()}
+                  >
+                    Import {bulkPreview.filter((r) => !r.error).length} Events
+                  </Button>
+                </div>
+              </>
+            )}
           </Card>
         </div>
       )}
