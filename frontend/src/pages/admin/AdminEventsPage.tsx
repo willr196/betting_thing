@@ -124,6 +124,7 @@ export function AdminEventsPage() {
   const [showEditor, setShowEditor] = useState(false);
   const [editingEvent, setEditingEvent] = useState<AdminEvent | null>(null);
   const [editorLoading, setEditorLoading] = useState(false);
+  const [inlineOddsLoadingId, setInlineOddsLoadingId] = useState<string | null>(null);
   const [form, setForm] = useState<EventFormState>(createEmptyEventForm);
   const [showBulkImport, setShowBulkImport] = useState(false);
   const [bulkPasteText, setBulkPasteText] = useState('');
@@ -198,6 +199,12 @@ export function AdminEventsPage() {
   const openEditEditor = (event: AdminEvent) => {
     setEditingEvent(event);
     setForm(eventToFormState(event));
+    setShowEditor(true);
+  };
+
+  const openDuplicateEditor = (event: AdminEvent) => {
+    setEditingEvent(null);
+    setForm(eventToTemplateFormState(event));
     setShowEditor(true);
   };
 
@@ -323,6 +330,31 @@ export function AdminEventsPage() {
     }
   };
 
+  const handleInlineOddsSave = async (
+    event: AdminEvent,
+    odds: Array<{ name: string; price: number }>
+  ) => {
+    setInlineOddsLoadingId(event.id);
+    try {
+      await api.updateAdminEvent(event.id, {
+        odds,
+        detachFromExternalSource: true,
+      });
+      toast.success(
+        !event.externalEventId || !event.externalSportKey
+          ? 'Odds updated'
+          : 'Odds updated. Event now uses local odds only.'
+      );
+      await loadData();
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message ? err.message : 'Failed to update odds';
+      toast.error(message);
+    } finally {
+      setInlineOddsLoadingId(null);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
@@ -418,6 +450,7 @@ export function AdminEventsPage() {
                       setExpandedId(expandedId === event.id ? null : event.id)
                     }
                     onEdit={() => openEditEditor(event)}
+                    onDuplicate={() => openDuplicateEditor(event)}
                     onLock={() => void handleLock(event.id)}
                     onCancel={() => void handleCancel(event.id)}
                     onSettle={() => {
@@ -425,6 +458,8 @@ export function AdminEventsPage() {
                       setSelectedOutcome(event.outcomes[0] || '');
                     }}
                     isActionLoading={actionLoading === event.id}
+                    isInlineOddsLoading={inlineOddsLoadingId === event.id}
+                    onInlineOddsSave={(odds) => handleInlineOddsSave(event, odds)}
                   />
                 ))}
               </tbody>
@@ -742,23 +777,71 @@ function EventRow({
   expanded,
   onToggle,
   onEdit,
+  onDuplicate,
   onLock,
   onCancel,
   onSettle,
   isActionLoading,
+  isInlineOddsLoading,
+  onInlineOddsSave,
 }: {
   event: AdminEvent;
   expanded: boolean;
   onToggle: () => void;
   onEdit: () => void;
+  onDuplicate: () => void;
   onLock: () => void;
   onCancel: () => void;
   onSettle: () => void;
   isActionLoading: boolean;
+  isInlineOddsLoading: boolean;
+  onInlineOddsSave: (
+    odds: Array<{ name: string; price: number }>
+  ) => Promise<void>;
 }) {
   const outcomePrices = getOutcomePrices(event);
   const isLocalOnly = !event.externalEventId || !event.externalSportKey;
   const canEdit = event.status === 'OPEN' || event.status === 'LOCKED';
+  const [inlineOddsDraft, setInlineOddsDraft] = useState(() =>
+    createInlineOddsDraft(event)
+  );
+
+  useEffect(() => {
+    setInlineOddsDraft(createInlineOddsDraft(event));
+  }, [event]);
+
+  const inlineOddsInvalid = inlineOddsDraft.some((row) => {
+    const price = Number(row.price);
+    return !Number.isFinite(price) || price <= 1;
+  });
+  const inlineOddsDirty = inlineOddsDraft.some((row) => {
+    const nextPrice = Number(row.price);
+    const currentPrice = outcomePrices.get(row.name) ?? event.payoutMultiplier;
+    return nextPrice !== currentPrice;
+  });
+
+  const handleInlineOddsChange = (outcome: string, price: string) => {
+    setInlineOddsDraft((current) =>
+      current.map((row) => (row.name === outcome ? { ...row, price } : row))
+    );
+  };
+
+  const resetInlineOdds = () => {
+    setInlineOddsDraft(createInlineOddsDraft(event));
+  };
+
+  const saveInlineOdds = async () => {
+    if (!canEdit || inlineOddsInvalid || !inlineOddsDirty) {
+      return;
+    }
+
+    await onInlineOddsSave(
+      inlineOddsDraft.map((row) => ({
+        name: row.name,
+        price: Number(row.price),
+      }))
+    );
+  };
 
   return (
     <>
@@ -792,6 +875,9 @@ function EventRow({
                 Edit
               </Button>
             )}
+            <Button variant="ghost" size="sm" onClick={onDuplicate}>
+              Duplicate
+            </Button>
             {event.status === 'OPEN' && (
               <>
                 <Button
@@ -836,19 +922,81 @@ function EventRow({
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
               <div>
                 <p className="text-xs font-semibold uppercase text-gray-400">Outcomes</p>
-                <ul className="mt-1 space-y-1">
-                  {event.outcomes.map((outcome) => (
-                    <li key={outcome} className="text-sm text-gray-700">
-                      <span className="font-medium">{outcome}</span>
-                      <span className="ml-2 text-gray-500">
-                        @ {(outcomePrices.get(outcome) ?? event.payoutMultiplier).toFixed(2)}
-                      </span>
-                      {event.finalOutcome === outcome && (
-                        <span className="ml-2 font-semibold text-green-600">(Winner)</span>
-                      )}
-                    </li>
-                  ))}
-                </ul>
+                {canEdit ? (
+                  <div className="mt-2 space-y-2">
+                    {event.outcomes.map((outcome) => {
+                      const draftRow = inlineOddsDraft.find((row) => row.name === outcome);
+                      return (
+                        <label
+                          key={outcome}
+                          className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_112px] sm:items-center"
+                        >
+                          <span className="text-sm text-gray-700">
+                            <span className="font-medium">{outcome}</span>
+                            {event.finalOutcome === outcome && (
+                              <span className="ml-2 font-semibold text-green-600">
+                                (Winner)
+                              </span>
+                            )}
+                          </span>
+                          <input
+                            type="number"
+                            min="1.01"
+                            step="0.01"
+                            value={draftRow?.price ?? ''}
+                            onChange={(e) =>
+                              handleInlineOddsChange(outcome, e.target.value)
+                            }
+                            className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-primary-500"
+                          />
+                        </label>
+                      );
+                    })}
+                    <div className="flex flex-wrap gap-2 pt-1">
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        disabled={isInlineOddsLoading || !inlineOddsDirty}
+                        onClick={resetInlineOdds}
+                      >
+                        Reset
+                      </Button>
+                      <Button
+                        size="sm"
+                        isLoading={isInlineOddsLoading}
+                        disabled={!inlineOddsDirty || inlineOddsInvalid}
+                        onClick={() => void saveInlineOdds()}
+                      >
+                        Save Odds
+                      </Button>
+                    </div>
+                    {inlineOddsInvalid && (
+                      <p className="text-xs text-red-600">
+                        Each price must be greater than 1.
+                      </p>
+                    )}
+                    {!isLocalOnly && (
+                      <p className="text-xs text-amber-700">
+                        Saving inline prices detaches this event from the live API feed
+                        so sync will not overwrite the manual odds.
+                      </p>
+                    )}
+                  </div>
+                ) : (
+                  <ul className="mt-1 space-y-1">
+                    {event.outcomes.map((outcome) => (
+                      <li key={outcome} className="text-sm text-gray-700">
+                        <span className="font-medium">{outcome}</span>
+                        <span className="ml-2 text-gray-500">
+                          @ {(outcomePrices.get(outcome) ?? event.payoutMultiplier).toFixed(2)}
+                        </span>
+                        {event.finalOutcome === outcome && (
+                          <span className="ml-2 font-semibold text-green-600">(Winner)</span>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </div>
               <div>
                 <p className="text-xs font-semibold uppercase text-gray-400">Details</p>
@@ -923,6 +1071,20 @@ function eventToFormState(event: AdminEvent): EventFormState {
       )
     ),
     detachFromExternalSource: true,
+  };
+}
+
+function eventToTemplateFormState(event: AdminEvent): EventFormState {
+  const fallbackStartsAt = Date.now() + 60 * 60 * 1000;
+  const sourceStartsAt = new Date(event.startsAt).getTime();
+  const nextStartsAt = Number.isFinite(sourceStartsAt)
+    ? Math.max(sourceStartsAt, fallbackStartsAt)
+    : fallbackStartsAt;
+
+  return {
+    ...eventToFormState(event),
+    title: event.title.endsWith(' (Copy)') ? event.title : `${event.title} (Copy)`,
+    startsAt: toDateTimeInputValue(new Date(nextStartsAt).toISOString()),
   };
 }
 
@@ -1005,6 +1167,14 @@ function getOutcomePrices(event: AdminEvent) {
     map.set(outcome.name, outcome.price);
   }
   return map;
+}
+
+function createInlineOddsDraft(event: AdminEvent) {
+  const oddsMap = getOutcomePrices(event);
+  return event.outcomes.map((outcome) => ({
+    name: outcome,
+    price: String(oddsMap.get(outcome) ?? event.payoutMultiplier),
+  }));
 }
 
 function toDateTimeInputValue(value: string) {
