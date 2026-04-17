@@ -240,6 +240,29 @@ router.post(
 );
 
 /**
+ * POST /admin/events/:id/uncancel
+ * Restore a previously cancelled event when its refunds can be safely reversed.
+ */
+router.post(
+  '/events/:id/uncancel',
+  validateParams(idParamSchema),
+  asyncHandler(async (req, res) => {
+    const { userId } = getAuthUser(req);
+    const result = await EventService.uncancel(req.params.id as string);
+
+    await AuditLogService.log({
+      adminId: userId,
+      action: 'UNCANCEL_EVENT',
+      targetType: 'EVENT',
+      targetId: req.params.id as string,
+      details: result,
+    });
+
+    sendSuccess(res, { restoration: result });
+  })
+);
+
+/**
  * GET /admin/events
  * List all events with optional status filter.
  */

@@ -8,6 +8,7 @@ const {
   tokenSyncMock,
   pointsCreditMock,
   ledgerCreditMock,
+  ledgerDebitMock,
 } = vi.hoisted(() => ({
   eventFindManyMock: vi.fn(),
   transactionMock: vi.fn(),
@@ -15,6 +16,7 @@ const {
   tokenSyncMock: vi.fn(),
   pointsCreditMock: vi.fn(),
   ledgerCreditMock: vi.fn(),
+  ledgerDebitMock: vi.fn(),
 }));
 
 vi.mock('../services/database.js', () => ({
@@ -42,6 +44,7 @@ vi.mock('../services/pointsLedger.js', () => ({
 vi.mock('../services/ledger.js', () => ({
   LedgerService: {
     credit: ledgerCreditMock,
+    debit: ledgerDebitMock,
   },
 }));
 
@@ -50,6 +53,7 @@ import { AccumulatorService } from '../services/accumulators.js';
 describe('AccumulatorService', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    ledgerDebitMock.mockResolvedValue({ transactionId: 'txn_restore', newBalance: 10 });
   });
 
   it('rejects duplicate legs on the same event', async () => {
@@ -191,5 +195,83 @@ describe('AccumulatorService', () => {
       tx
     );
     expect(tokenSyncMock).toHaveBeenCalledWith('user_3', tx);
+  });
+
+  it('restores a cancelled accumulator when a cancelled event is uncancelled', async () => {
+    const accumulatorUpdateMock = vi.fn().mockResolvedValue({ count: 1 });
+
+    const tx = {
+      accumulatorLeg: {
+        findMany: vi.fn().mockResolvedValue([{ accumulatorId: 'acc_restore_1' }]),
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+      },
+      accumulator: {
+        findUnique: vi.fn().mockResolvedValue({
+          id: 'acc_restore_1',
+          userId: 'user_restore_1',
+          status: 'CANCELLED',
+          stakeAmount: 8,
+          legs: [
+            { eventId: 'event_restore_1', status: 'REFUNDED', odds: { toNumber: () => 2.1 } },
+            { eventId: 'event_other_1', status: 'REFUNDED', odds: { toNumber: () => 1.9 } },
+          ],
+        }),
+        update: accumulatorUpdateMock,
+      },
+    } as unknown as Prisma.TransactionClient;
+
+    const result = await AccumulatorService.restoreCancelledLegsForEvent(
+      'event_restore_1',
+      tx
+    );
+
+    expect(ledgerDebitMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        userId: 'user_restore_1',
+        amount: 8,
+        referenceType: 'ACCUMULATOR',
+        referenceId: 'acc_restore_1',
+      }),
+      tx
+    );
+    expect(accumulatorUpdateMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'acc_restore_1' },
+        data: expect.objectContaining({
+          status: 'PENDING',
+          payout: null,
+          settledAt: null,
+        }),
+      })
+    );
+    expect(result).toEqual({
+      restoredLegs: 1,
+      restoredAccumulators: 1,
+      affectedUserIds: ['user_restore_1'],
+    });
+  });
+
+  it('blocks accumulator restoration after the cancellation produced a win', async () => {
+    const tx = {
+      accumulatorLeg: {
+        findMany: vi.fn().mockResolvedValue([{ accumulatorId: 'acc_won_1' }]),
+      },
+      accumulator: {
+        findUnique: vi.fn().mockResolvedValue({
+          id: 'acc_won_1',
+          userId: 'user_won_1',
+          status: 'WON',
+          stakeAmount: 8,
+          legs: [
+            { eventId: 'event_restore_2', status: 'REFUNDED', odds: { toNumber: () => 2.0 } },
+            { eventId: 'event_other_2', status: 'WON', odds: { toNumber: () => 1.7 } },
+          ],
+        }),
+      },
+    } as unknown as Prisma.TransactionClient;
+
+    await expect(
+      AccumulatorService.restoreCancelledLegsForEvent('event_restore_2', tx)
+    ).rejects.toThrow('Cannot uncancel this event because one or more accumulators were already marked as won after the cancellation');
   });
 });

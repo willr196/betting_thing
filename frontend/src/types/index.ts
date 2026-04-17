@@ -368,6 +368,12 @@ export interface AdminEvent extends Event {
   _count?: { predictions: number };
 }
 
+export interface AdminEventRestoration {
+  restoredStatus: 'OPEN' | 'LOCKED';
+  restoredPredictions: number;
+  restoredAccumulators: number;
+}
+
 export interface AuditLogEntry {
   id: string;
   adminId: string;

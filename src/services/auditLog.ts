@@ -11,6 +11,7 @@ export type AuditAction =
   | 'LOCK_EVENT'
   | 'SETTLE_EVENT'
   | 'CANCEL_EVENT'
+  | 'UNCANCEL_EVENT'
   | 'CREATE_REWARD'
   | 'UPDATE_REWARD'
   | 'FULFIL_REDEMPTION'

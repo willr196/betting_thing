@@ -238,8 +238,31 @@ export function AdminEventsPage() {
       const result = await api.cancelEvent(eventId);
       toast.success(`Event cancelled. ${result.cancellation.refunded} predictions refunded.`);
       await loadData();
-    } catch {
-      toast.error('Failed to cancel event');
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message ? err.message : 'Failed to cancel event';
+      toast.error(message);
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleUncancel = async (eventId: string) => {
+    setActionLoading(eventId);
+    try {
+      const result = await api.uncancelEvent(eventId);
+      toast.success(
+        `Event restored to ${result.restoration.restoredStatus}. ` +
+          `${result.restoration.restoredPredictions} predictions reactivated` +
+          (result.restoration.restoredAccumulators > 0
+            ? `, ${result.restoration.restoredAccumulators} accumulators restored`
+            : '')
+      );
+      await loadData();
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message ? err.message : 'Failed to uncancel event';
+      toast.error(message);
     } finally {
       setActionLoading(null);
     }
@@ -453,6 +476,7 @@ export function AdminEventsPage() {
                     onDuplicate={() => openDuplicateEditor(event)}
                     onLock={() => void handleLock(event.id)}
                     onCancel={() => void handleCancel(event.id)}
+                    onUncancel={() => void handleUncancel(event.id)}
                     onSettle={() => {
                       setSettleModalEvent(event);
                       setSelectedOutcome(event.outcomes[0] || '');
@@ -780,6 +804,7 @@ function EventRow({
   onDuplicate,
   onLock,
   onCancel,
+  onUncancel,
   onSettle,
   isActionLoading,
   isInlineOddsLoading,
@@ -792,6 +817,7 @@ function EventRow({
   onDuplicate: () => void;
   onLock: () => void;
   onCancel: () => void;
+  onUncancel: () => void;
   onSettle: () => void;
   isActionLoading: boolean;
   isInlineOddsLoading: boolean;
@@ -912,6 +938,16 @@ function EventRow({
                   Cancel
                 </Button>
               </>
+            )}
+            {event.status === 'CANCELLED' && (
+              <Button
+                variant="secondary"
+                size="sm"
+                isLoading={isActionLoading}
+                onClick={onUncancel}
+              >
+                Uncancel
+              </Button>
             )}
           </div>
         </td>

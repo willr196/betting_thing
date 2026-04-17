@@ -557,6 +557,119 @@ export const EventService = {
   },
 
   /**
+   * Restore a previously cancelled event and reverse refunded stakes where safe.
+   */
+  async uncancel(
+    eventId: string
+  ): Promise<{ restoredStatus: 'OPEN' | 'LOCKED'; restoredPredictions: number; restoredAccumulators: number }> {
+    return prisma.$transaction(
+      async (tx) => {
+        const now = new Date();
+
+        const [lockedEvent] = await tx.$queryRaw<
+          Array<{ id: string; status: string; startsAt: Date }>
+        >`SELECT "id", "status", "startsAt"
+          FROM "Event"
+          WHERE "id" = ${eventId}
+          FOR UPDATE`;
+
+        if (!lockedEvent) {
+          throw AppError.notFound('Event');
+        }
+
+        if (lockedEvent.status !== 'CANCELLED') {
+          throw AppError.badRequest(`Cannot uncancel event with status ${lockedEvent.status}`);
+        }
+
+        const refundedPredictions = await tx.$queryRaw<
+          Array<{
+            id: string;
+            userId: string;
+            stakeAmount: number;
+            status: string;
+          }>
+        >`SELECT "id", "userId", "stakeAmount", "status"
+          FROM "Prediction"
+          WHERE "eventId" = ${eventId} AND "status" = 'REFUNDED'
+          FOR UPDATE`;
+
+        let restoredPredictions = 0;
+        const affectedUserIds = new Set<string>();
+
+        for (const prediction of refundedPredictions) {
+          if (prediction.status !== 'REFUNDED') {
+            continue;
+          }
+
+          const restoredUpdate = await tx.prediction.updateMany({
+            where: {
+              id: prediction.id,
+              status: 'REFUNDED',
+            },
+            data: {
+              status: 'PENDING',
+              payout: null,
+              settledAt: null,
+            },
+          });
+
+          if (restoredUpdate.count === 0) {
+            continue;
+          }
+
+          await LedgerService.debit(
+            {
+              userId: prediction.userId,
+              amount: prediction.stakeAmount,
+              type: 'PREDICTION_STAKE',
+              referenceType: 'PREDICTION',
+              referenceId: prediction.id,
+              description: `Stake restored after uncancelling event ${eventId}`,
+            },
+            tx
+          );
+
+          affectedUserIds.add(prediction.userId);
+          restoredPredictions++;
+        }
+
+        const accumulatorRestore = await AccumulatorService.restoreCancelledLegsForEvent(
+          eventId,
+          tx
+        );
+
+        for (const userId of accumulatorRestore.affectedUserIds) {
+          affectedUserIds.add(userId);
+        }
+
+        const restoredStatus = lockedEvent.startsAt.getTime() > now.getTime() ? 'OPEN' : 'LOCKED';
+
+        await tx.event.update({
+          where: { id: eventId },
+          data: {
+            status: restoredStatus,
+            settledBy: null,
+            settledAt: null,
+          },
+        });
+
+        for (const userId of affectedUserIds) {
+          await TokenAllowanceService.syncToLedgerBalance(userId, tx);
+        }
+
+        return {
+          restoredStatus,
+          restoredPredictions,
+          restoredAccumulators: accumulatorRestore.restoredAccumulators,
+        };
+      },
+      {
+        timeout: 30000,
+      }
+    );
+  },
+
+  /**
    * Auto-lock events that have started.
    * Can be run periodically by a cron job.
    */

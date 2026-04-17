@@ -429,7 +429,136 @@ export const AccumulatorService = {
       });
     }
   },
+
+  async restoreCancelledLegsForEvent(
+    eventId: string,
+    tx: Prisma.TransactionClient
+  ): Promise<{ restoredLegs: number; restoredAccumulators: number; affectedUserIds: string[] }> {
+    const refundedLegs = await tx.accumulatorLeg.findMany({
+      where: {
+        eventId,
+        status: 'REFUNDED',
+      },
+      select: {
+        accumulatorId: true,
+      },
+    });
+
+    if (refundedLegs.length === 0) {
+      return { restoredLegs: 0, restoredAccumulators: 0, affectedUserIds: [] };
+    }
+
+    const accumulatorIds = [...new Set(refundedLegs.map((leg) => leg.accumulatorId))];
+    const accumulators = await Promise.all(
+      accumulatorIds.map((accumulatorId) =>
+        tx.accumulator.findUnique({
+          where: { id: accumulatorId },
+          include: { legs: true },
+        })
+      )
+    );
+
+    for (const accumulator of accumulators) {
+      if (!accumulator) {
+        continue;
+      }
+
+      if (accumulator.status === 'WON') {
+        throw AppError.badRequest(
+          'Cannot uncancel this event because one or more accumulators were already marked as won after the cancellation'
+        );
+      }
+
+      if (accumulator.status === 'CASHED_OUT') {
+        throw AppError.badRequest(
+          'Cannot uncancel this event because one or more related accumulators were already cashed out'
+        );
+      }
+    }
+
+    const restoreLegsResult = await tx.accumulatorLeg.updateMany({
+      where: {
+        eventId,
+        status: 'REFUNDED',
+      },
+      data: {
+        status: 'PENDING',
+        settledAt: null,
+      },
+    });
+
+    const affectedUserIds = new Set<string>();
+    let restoredAccumulators = 0;
+
+    for (const accumulator of accumulators) {
+      if (!accumulator) {
+        continue;
+      }
+
+      const recalculatedOdds = calculateActiveCombinedOdds(accumulator.legs, eventId);
+      const newPotentialPayout = Math.floor(accumulator.stakeAmount * recalculatedOdds);
+
+      if (accumulator.status === 'CANCELLED') {
+        await LedgerService.debit(
+          {
+            userId: accumulator.userId,
+            amount: accumulator.stakeAmount,
+            type: 'PREDICTION_STAKE',
+            referenceType: 'ACCUMULATOR',
+            referenceId: accumulator.id,
+            description: `Stake restored after uncancelling event ${eventId}`,
+          },
+          tx
+        );
+
+        await tx.accumulator.update({
+          where: { id: accumulator.id },
+          data: {
+            combinedOdds: new Prisma.Decimal(recalculatedOdds),
+            potentialPayout: newPotentialPayout,
+            status: 'PENDING',
+            payout: null,
+            settledAt: null,
+          },
+        });
+
+        affectedUserIds.add(accumulator.userId);
+        restoredAccumulators++;
+        continue;
+      }
+
+      if (accumulator.status === 'PENDING') {
+        await tx.accumulator.update({
+          where: { id: accumulator.id },
+          data: {
+            combinedOdds: new Prisma.Decimal(recalculatedOdds),
+            potentialPayout: newPotentialPayout,
+          },
+        });
+      }
+    }
+
+    return {
+      restoredLegs: restoreLegsResult.count,
+      restoredAccumulators,
+      affectedUserIds: Array.from(affectedUserIds),
+    };
+  },
 };
+
+function calculateActiveCombinedOdds(
+  legs: Array<{ eventId: string; status: string; odds: Prisma.Decimal }>,
+  restoringEventId: string
+): number {
+  const activeLegs = legs.filter(
+    (leg) => leg.status !== 'REFUNDED' || leg.eventId === restoringEventId
+  );
+
+  return Math.min(
+    activeLegs.reduce((product, leg) => product * leg.odds.toNumber(), 1),
+    MAX_COMBINED_ODDS
+  );
+}
 
 function resolveLegOdds(
   event: {

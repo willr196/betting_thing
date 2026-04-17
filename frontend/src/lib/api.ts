@@ -30,6 +30,7 @@ import type {
   SettlementStatus,
   OddsQuota,
   AdminRedemption,
+  AdminEventRestoration,
 } from '../types';
 
 // =============================================================================
@@ -781,6 +782,15 @@ export class ApiClient {
   ): Promise<{ cancellation: { refunded: number } }> {
     return this.request<{ cancellation: { refunded: number } }>(
       `/admin/events/${eventId}/cancel`,
+      { method: 'POST' }
+    );
+  }
+
+  async uncancelEvent(
+    eventId: string
+  ): Promise<{ restoration: AdminEventRestoration }> {
+    return this.request<{ restoration: AdminEventRestoration }>(
+      `/admin/events/${eventId}/uncancel`,
       { method: 'POST' }
     );
   }
