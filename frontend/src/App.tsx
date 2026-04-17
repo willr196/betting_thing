@@ -10,6 +10,7 @@ import {
   LoginPage,
   ForgotPasswordPage,
   ResetPasswordPage,
+  VerifyEmailPage,
   AdminLoginPage,
   RegisterPage,
   EventsPage,
@@ -184,6 +185,17 @@ function AppRoutes() {
         element={<Layout />}
       >
         <Route index element={<ErrorBoundary><ResetPasswordPage /></ErrorBoundary>} />
+      </Route>
+
+      <Route
+        path="/verify-email"
+        element={
+          <OpenRoute>
+            <Layout />
+          </OpenRoute>
+        }
+      >
+        <Route index element={<ErrorBoundary><VerifyEmailPage /></ErrorBoundary>} />
       </Route>
 
       <Route

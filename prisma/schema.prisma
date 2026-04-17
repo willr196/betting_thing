@@ -63,6 +63,7 @@ model User {
   leagueStandings     LeagueStanding[]
   accumulators        Accumulator[]
   passwordResetTokens PasswordResetToken[]
+  emailVerificationTokens EmailVerificationToken[]
 
   @@index([email])
   @@index([createdAt])
@@ -558,6 +559,25 @@ enum RedemptionStatus {
 // Token is stored hashed; the raw value is only ever sent by email.
 
 model PasswordResetToken {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+// =============================================================================
+// EMAIL VERIFICATION TOKEN
+// =============================================================================
+// Single-use tokens for confirming email ownership.
+// Token is stored hashed; the raw value is only ever sent by email.
+
+model EmailVerificationToken {
   id        String    @id @default(cuid())
   userId    String
   user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)

@@ -25,6 +25,34 @@ function createTransport() {
   });
 }
 
+async function sendHtmlEmail(options: {
+  toEmail: string;
+  subject: string;
+  html: string;
+  devLogMessage: string;
+  devLogData: Record<string, unknown>;
+}): Promise<void> {
+  const transport = createTransport();
+
+  if (!transport) {
+    logger.info(
+      {
+        toEmail: options.toEmail,
+        ...options.devLogData,
+      },
+      options.devLogMessage
+    );
+    return;
+  }
+
+  await transport.sendMail({
+    from: config.email.from,
+    to: options.toEmail,
+    subject: options.subject,
+    html: options.html,
+  });
+}
+
 export const EmailService = {
   async sendPasswordReset(
     toEmail: string,
@@ -43,32 +71,58 @@ export const EmailService = {
       <p style="color:#6b7280;font-size:13px">If the button doesn't work, copy and paste this URL into your browser:<br>${resetUrl}</p>
     `;
 
-    const transport = createTransport();
-
-    if (!transport) {
-      let resetOrigin: string | null = null;
-      try {
-        resetOrigin = new URL(resetUrl).origin;
-      } catch {
-        resetOrigin = null;
-      }
-
-      logger.info(
-        {
-          toEmail,
-          resetOrigin,
-          expiresInMinutes: config.email.passwordResetExpiresMinutes,
-        },
-        '[DEV] Password reset requested (SMTP not configured)'
-      );
-      return;
+    let resetOrigin: string | null = null;
+    try {
+      resetOrigin = new URL(resetUrl).origin;
+    } catch {
+      resetOrigin = null;
     }
 
-    await transport.sendMail({
-      from: config.email.from,
-      to: toEmail,
+    await sendHtmlEmail({
+      toEmail,
       subject,
       html,
+      devLogMessage: '[DEV] Password reset requested (SMTP not configured)',
+      devLogData: {
+        resetOrigin,
+        expiresInMinutes: config.email.passwordResetExpiresMinutes,
+      },
+    });
+  },
+
+  async sendEmailVerification(
+    toEmail: string,
+    verificationUrl: string
+  ): Promise<void> {
+    const subject = 'Confirm your email address';
+    const html = `
+      <p>Hi,</p>
+      <p>Confirm your email address to finish setting up your account.</p>
+      <p style="margin:24px 0">
+        <a href="${verificationUrl}" style="background:#2563eb;color:#fff;padding:12px 24px;border-radius:6px;text-decoration:none;font-weight:600">
+          Confirm Email
+        </a>
+      </p>
+      <p>This link expires in ${config.email.emailVerificationExpiresMinutes} minutes. If you did not create this account, you can safely ignore this email.</p>
+      <p style="color:#6b7280;font-size:13px">If the button doesn't work, copy and paste this URL into your browser:<br>${verificationUrl}</p>
+    `;
+
+    let verificationOrigin: string | null = null;
+    try {
+      verificationOrigin = new URL(verificationUrl).origin;
+    } catch {
+      verificationOrigin = null;
+    }
+
+    await sendHtmlEmail({
+      toEmail,
+      subject,
+      html,
+      devLogMessage: '[DEV] Email verification requested (SMTP not configured)',
+      devLogData: {
+        verificationOrigin,
+        expiresInMinutes: config.email.emailVerificationExpiresMinutes,
+      },
     });
   },
 };

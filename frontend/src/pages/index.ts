@@ -1,6 +1,7 @@
 export { LoginPage } from './LoginPage';
 export { ForgotPasswordPage } from './ForgotPasswordPage';
 export { ResetPasswordPage } from './ResetPasswordPage';
+export { VerifyEmailPage } from './VerifyEmailPage';
 export { AdminLoginPage } from './AdminLoginPage';
 export { RegisterPage } from './RegisterPage';
 export { EventsPage } from './EventsPage';

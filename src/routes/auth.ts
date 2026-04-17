@@ -12,6 +12,7 @@ import { AchievementService } from '../services/achievements.js';
 import { requireAuth, validateBody, validateQuery, getAuthUser, emailSchema, passwordSchema } from '../middleware/index.js';
 import { asyncHandler, sendSuccess } from '../utils/index.js';
 import { config } from '../config/index.js';
+import { logger } from '../logger.js';
 
 const router = Router();
 
@@ -146,6 +147,20 @@ const resetPasswordLimiter = rateLimit({
   legacyHeaders: false,
 });
 
+const resendVerificationLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+  message: {
+    success: false,
+    error: {
+      code: 'RATE_LIMITED',
+      message: 'Too many verification email requests. Please try again later.',
+    },
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
 function getRequestOrigin(req: Request): string | null {
   const originHeader = req.headers.origin;
   if (typeof originHeader === 'string' && originHeader.length > 0) {
@@ -199,6 +214,19 @@ function requireTrustedFrontendOrigin(req: Request, res: Response, next: NextFun
   });
 }
 
+function getFrontendBaseUrl(req: Request): string {
+  return config.server.frontendUrl ?? getRequestOrigin(req) ?? 'http://localhost:5173';
+}
+
+async function sendEmailVerificationForUser(
+  userId: string,
+  frontendUrl: string
+): Promise<void> {
+  const { rawToken, userEmail } = await AuthService.createEmailVerificationToken(userId);
+  const verificationUrl = `${frontendUrl}/verify-email?token=${rawToken}`;
+  await EmailService.sendEmailVerification(userEmail, verificationUrl);
+}
+
 // =============================================================================
 // VALIDATION SCHEMAS
 // =============================================================================
@@ -225,6 +253,10 @@ const forgotPasswordSchema = z.object({
 const resetPasswordSchema = z.object({
   token: z.string().min(1, 'Reset token is required'),
   password: passwordSchema,
+});
+
+const verifyEmailSchema = z.object({
+  token: z.string().min(1, 'Verification token is required'),
 });
 
 const displayNameSchema = z.union([
@@ -280,6 +312,16 @@ router.post(
     const { email, password } = req.body;
     const result = await AuthService.register(email, password);
     setRefreshCookie(res, result.refreshToken);
+
+    try {
+      await sendEmailVerificationForUser(result.user.id, getFrontendBaseUrl(req));
+    } catch (error) {
+      logger.warn(
+        { err: error, userId: result.user.id },
+        'Failed to send verification email after registration'
+      );
+    }
+
     sendSuccess(res, { user: result.user, token: result.token }, 201);
   })
 );
@@ -399,6 +441,18 @@ router.patch(
   asyncHandler(async (req: Request, res: Response) => {
     const { userId } = getAuthUser(req);
     const user = await AuthService.updateProfile(userId, req.body);
+
+    if (req.body.email !== undefined) {
+      try {
+        await sendEmailVerificationForUser(user.id, getFrontendBaseUrl(req));
+      } catch (error) {
+        logger.warn(
+          { err: error, userId: user.id },
+          'Failed to send verification email after email change'
+        );
+      }
+    }
+
     sendSuccess(res, { user });
   })
 );
@@ -550,7 +604,7 @@ router.post(
 
     try {
       const { rawToken, userEmail } = await AuthService.createPasswordResetToken(email);
-      const frontendUrl = config.server.frontendUrl ?? 'http://localhost:5173';
+      const frontendUrl = getFrontendBaseUrl(req);
       const resetUrl = `${frontendUrl}/reset-password?token=${rawToken}`;
       await EmailService.sendPasswordReset(userEmail, resetUrl);
     } catch {
@@ -573,6 +627,37 @@ router.post(
     const { token, password } = req.body as { token: string; password: string };
     await AuthService.resetPassword(token, password);
     sendSuccess(res, { message: 'Password updated. You can now log in with your new password.' });
+  })
+);
+
+/**
+ * POST /auth/verify-email
+ * Validate a verification token and mark the email address as confirmed.
+ */
+router.post(
+  '/verify-email',
+  validateBody(verifyEmailSchema),
+  asyncHandler(async (req: Request, res: Response) => {
+    const { token } = req.body as { token: string };
+    await AuthService.verifyEmail(token);
+    sendSuccess(res, {
+      message: 'Email verified successfully. You can continue using your account.',
+    });
+  })
+);
+
+/**
+ * POST /auth/resend-verification
+ * Send a fresh email verification link for the authenticated user.
+ */
+router.post(
+  '/resend-verification',
+  resendVerificationLimiter,
+  requireAuth,
+  asyncHandler(async (req: Request, res: Response) => {
+    const { userId } = getAuthUser(req);
+    await sendEmailVerificationForUser(userId, getFrontendBaseUrl(req));
+    sendSuccess(res, { message: 'Verification email sent.' });
   })
 );
 

@@ -11,6 +11,8 @@ type MockAuthService = {
   register: ReturnType<typeof vi.fn>;
   refreshAccessToken: ReturnType<typeof vi.fn>;
   revokeRefreshToken: ReturnType<typeof vi.fn>;
+  createEmailVerificationToken: ReturnType<typeof vi.fn>;
+  verifyEmail: ReturnType<typeof vi.fn>;
 };
 
 type MockResponse = {
@@ -204,6 +206,8 @@ describe('auth route trusted-origin security', () => {
       register: vi.fn(),
       refreshAccessToken: vi.fn(),
       revokeRefreshToken: vi.fn(),
+      createEmailVerificationToken: vi.fn(),
+      verifyEmail: vi.fn(),
     };
 
     vi.doMock('../services/auth.js', () => ({
@@ -219,6 +223,8 @@ describe('auth route trusted-origin security', () => {
     authService.register.mockReset();
     authService.refreshAccessToken.mockReset();
     authService.revokeRefreshToken.mockReset();
+    authService.createEmailVerificationToken.mockReset();
+    authService.verifyEmail.mockReset();
   });
 
   afterAll(() => {
@@ -377,6 +383,26 @@ describe('auth route trusted-origin security', () => {
         value: 'next-refresh-token',
       })
     );
+  });
+
+  it('verifies email tokens through the public confirmation route', async () => {
+    authService.verifyEmail.mockResolvedValue(undefined);
+
+    const { res } = await executePostRoute({
+      path: '/verify-email',
+      body: {
+        token: 'verification-token',
+      },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toMatchObject({
+      success: true,
+      data: {
+        message: 'Email verified successfully. You can continue using your account.',
+      },
+    });
+    expect(authService.verifyEmail).toHaveBeenCalledWith('verification-token');
   });
 
   it('blocks logout requests from untrusted origins before touching the refresh token', async () => {

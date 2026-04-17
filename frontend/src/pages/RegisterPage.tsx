@@ -16,7 +16,7 @@ export function RegisterPage() {
   const [formError, setFormError] = useState('');
 
   const { register } = useAuth();
-  const { error: showError } = useToast();
+  const { success: showSuccess, error: showError } = useToast();
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -60,6 +60,7 @@ export function RegisterPage() {
 
     try {
       await register(trimmedEmail, password);
+      showSuccess('Account created. Check your email for a verification link.');
       navigate(safeRedirect);
     } catch (err) {
       if (err instanceof ApiError && (err.code === 'NETWORK_ERROR' || err.status === 0)) {

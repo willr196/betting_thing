@@ -104,6 +104,7 @@ const envSchema = z.object({
   SMTP_PASS: z.string().optional(),
   SMTP_FROM: z.string().default('no-reply@predictionplatform.com'),
   PASSWORD_RESET_EXPIRES_MINUTES: z.coerce.number().int().min(5).default(60),
+  EMAIL_VERIFICATION_EXPIRES_MINUTES: z.coerce.number().int().min(5).default(1440),
 });
 
 // Parse and validate environment
@@ -217,6 +218,7 @@ export const config = {
     pass: env.SMTP_PASS,
     from: env.SMTP_FROM,
     passwordResetExpiresMinutes: env.PASSWORD_RESET_EXPIRES_MINUTES,
+    emailVerificationExpiresMinutes: env.EMAIL_VERIFICATION_EXPIRES_MINUTES,
   },
 } as const;
 

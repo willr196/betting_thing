@@ -54,6 +54,7 @@ export function SettingsPage() {
   const [profilePassword, setProfilePassword] = useState('');
   const [profileError, setProfileError] = useState('');
   const [isSavingProfile, setIsSavingProfile] = useState(false);
+  const [isResendingVerification, setIsResendingVerification] = useState(false);
 
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
@@ -153,7 +154,11 @@ export function SettingsPage() {
       const result = await api.updateProfile(payload);
       updateUser(result.user);
       setProfilePassword('');
-      success('Profile updated');
+      success(
+        emailChanged
+          ? 'Profile updated. Check your inbox to verify your new email address.'
+          : 'Profile updated'
+      );
     } catch (error) {
       if (error instanceof ApiError) {
         setProfileError(error.message);
@@ -162,6 +167,24 @@ export function SettingsPage() {
       }
     } finally {
       setIsSavingProfile(false);
+    }
+  };
+
+  const handleResendVerification = async () => {
+    setProfileError('');
+    setIsResendingVerification(true);
+
+    try {
+      await api.resendVerification();
+      success('Verification email sent.');
+    } catch (error) {
+      if (error instanceof ApiError) {
+        setProfileError(error.message);
+      } else {
+        showError('Failed to send verification email');
+      }
+    } finally {
+      setIsResendingVerification(false);
     }
   };
 
@@ -277,8 +300,43 @@ export function SettingsPage() {
                   Manage the name people see in leagues and leaderboards, plus the email used to sign in.
                 </p>
               </div>
-              <Badge className="bg-slate-100 text-slate-700">{profilePreview}</Badge>
+              <div className="flex flex-wrap items-center justify-end gap-2">
+                <Badge className="bg-slate-100 text-slate-700">{profilePreview}</Badge>
+                <Badge
+                  className={
+                    user.isVerified
+                      ? 'bg-green-100 text-green-800'
+                      : 'bg-amber-100 text-amber-800'
+                  }
+                >
+                  {user.isVerified ? 'Email verified' : 'Verification pending'}
+                </Badge>
+              </div>
             </div>
+
+            {!user.isVerified && (
+              <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50/80 px-4 py-3">
+                <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-amber-900">
+                      Confirm <strong>{user.email}</strong> to keep recovery and account emails working.
+                    </p>
+                    <p className="mt-1 text-sm text-amber-800">
+                      Use the latest email we sent, or request a fresh verification link.
+                    </p>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    isLoading={isResendingVerification}
+                    onClick={handleResendVerification}
+                  >
+                    Resend email
+                  </Button>
+                </div>
+              </div>
+            )}
 
             <form className="space-y-4" onSubmit={handleProfileSubmit}>
               <Input

@@ -434,6 +434,7 @@ export const AuthService = {
         }
 
         updateData.email = normalizedEmail;
+        updateData.isVerified = false;
       }
     }
 
@@ -508,6 +509,46 @@ export const AuthService = {
   },
 
   /**
+   * Create a single-use email verification token for the current email address.
+   * Returns the raw token (to embed in the email link) and the user's email.
+   */
+  async createEmailVerificationToken(
+    userId: string
+  ): Promise<{ rawToken: string; userEmail: string }> {
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, email: true, isVerified: true },
+    });
+
+    if (!user) {
+      throw AppError.notFound('User');
+    }
+
+    if (user.isVerified) {
+      throw new AppError('CONFLICT', 'Email address is already verified', 409);
+    }
+
+    const raw = randomBytes(32).toString('hex');
+    const hash = createHash('sha256').update(raw).digest('hex');
+    const tokenId = randomBytes(16).toString('hex');
+    const expiresAt = new Date(
+      Date.now() + config.email.emailVerificationExpiresMinutes * 60 * 1000
+    );
+
+    await prisma.$executeRaw`
+      DELETE FROM "EmailVerificationToken"
+      WHERE "userId" = ${user.id}
+    `;
+
+    await prisma.$executeRaw`
+      INSERT INTO "EmailVerificationToken" ("id", "userId", "tokenHash", "expiresAt")
+      VALUES (${tokenId}, ${user.id}, ${hash}, ${expiresAt})
+    `;
+
+    return { rawToken: raw, userEmail: user.email };
+  },
+
+  /**
    * Validate a password reset token and update the user's password.
    * Marks the token as used so it cannot be replayed.
    */
@@ -549,6 +590,66 @@ export const AuthService = {
         where: { id: record.id },
         data: { usedAt: new Date() },
       }),
+    ]);
+  },
+
+  /**
+   * Validate an email verification token and mark the user's email as verified.
+   * Marks the token as used and removes any older unused tokens for the user.
+   */
+  async verifyEmail(rawToken: string): Promise<void> {
+    const hash = createHash('sha256').update(rawToken).digest('hex');
+
+    const [record] = await prisma.$queryRaw<
+      Array<{
+        id: string;
+        userId: string;
+        expiresAt: Date;
+        usedAt: Date | null;
+      }>
+    >`
+      SELECT "id", "userId", "expiresAt", "usedAt"
+      FROM "EmailVerificationToken"
+      WHERE "tokenHash" = ${hash}
+      LIMIT 1
+    `;
+
+    if (!record) {
+      throw new AppError('TOKEN_INVALID', 'Invalid or expired verification link', 400);
+    }
+
+    if (record.usedAt) {
+      throw new AppError('TOKEN_INVALID', 'This verification link has already been used', 400);
+    }
+
+    if (record.expiresAt < new Date()) {
+      await prisma.$executeRaw`
+        DELETE FROM "EmailVerificationToken"
+        WHERE "id" = ${record.id}
+      `;
+      throw new AppError(
+        'TOKEN_EXPIRED',
+        'This verification link has expired. Please request a new one.',
+        400
+      );
+    }
+
+    const usedAt = new Date();
+    await prisma.$transaction([
+      prisma.user.update({
+        where: { id: record.userId },
+        data: { isVerified: true },
+      }),
+      prisma.$executeRaw`
+        UPDATE "EmailVerificationToken"
+        SET "usedAt" = ${usedAt}
+        WHERE "id" = ${record.id}
+      `,
+      prisma.$executeRaw`
+        DELETE FROM "EmailVerificationToken"
+        WHERE "userId" = ${record.userId}
+          AND "id" <> ${record.id}
+      `,
     ]);
   },
 };

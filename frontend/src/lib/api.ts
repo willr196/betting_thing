@@ -277,6 +277,19 @@ export class ApiClient {
     });
   }
 
+  async verifyEmail(token: string): Promise<{ message: string }> {
+    return this.request<{ message: string }>('/auth/verify-email', {
+      method: 'POST',
+      body: JSON.stringify({ token }),
+    });
+  }
+
+  async resendVerification(): Promise<{ message: string }> {
+    return this.request<{ message: string }>('/auth/resend-verification', {
+      method: 'POST',
+    });
+  }
+
   async resetPassword(token: string, password: string): Promise<void> {
     await this.request('/auth/reset-password', {
       method: 'POST',
